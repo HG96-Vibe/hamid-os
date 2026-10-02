@@ -1,0 +1,21 @@
+/* Display size (display.js). Scales the app on computers; the dot background, intro and sign-in screen stay full size. */
+@media (min-width:901px){
+  html.ds-zoomed body>:not(canvas.signal-bg):not(#intro):not(script){zoom:var(--ds-zoom)}
+  html.ds-zoomed #app:has(>.auth){zoom:1}
+  /* keep the page as wide as before, so the smaller text has room to spread out */
+  html.ds-zoomed main{max-width:calc(1140px / var(--ds-zoom))}
+  html.ds-zoomed .bar{width:min(calc(1140px / var(--ds-zoom)),calc(100% - 32px))}
+}
+
+/* Compact quote banner on Home (any screen size) */
+html.ds-hero-compact .hm-hero{padding:20px 28px 22px;border-radius:22px}
+html.ds-hero-compact .hm-hello{font-size:16px}
+html.ds-hero-compact .hm-quote{margin-top:10px;max-width:min(100%,760px);padding-right:130px}
+html.ds-hero-compact .hm-quote blockquote,html.ds-hero-compact .hm-quote.long blockquote{font-size:clamp(20px,2.2vw,26px);line-height:1.18}
+html.ds-hero-compact .hm-quote blockquote::before{display:none}
+html.ds-hero-compact .hm-quote figcaption{margin-top:8px;font-size:14px}
+html.ds-hero-compact .hm-hero.evening::before{width:52px;top:18px;right:34px;box-shadow:-12px 8px 0 0 #e0e7ff}
+html.ds-hero-compact .hm-hero.morning::before{width:min(40vw,320px);bottom:-90%}
+html.ds-hero-compact .hm-hero-top{padding-right:90px}
+html.ds-hero-compact .hm-qedit{bottom:16px;right:18px}
+@media (max-width:560px){html.ds-hero-compact .hm-quote{padding-right:0}html.ds-hero-compact .hm-hero{padding:18px 18px 56px}}
