@@ -1,0 +1,52 @@
+/* Phone density (option A, "Trimmed"): everything about 15% smaller on phones only. Desktop is untouched.
+   Page content is scaled with zoom so every tab shrinks evenly; text boxes stay at 16px on screen so iPhones don't zoom in when you type. */
+@media (max-width:700px){
+  main{zoom:.85;padding-top:16px}
+  main input:not([type=checkbox]):not([type=radio]),main textarea,main select{font-size:18.8px}
+  dialog{zoom:.9}
+  dialog input:not([type=checkbox]):not([type=radio]),dialog textarea,dialog select{font-size:17.8px}
+  .drawer{zoom:.88}
+  .drawer input:not([type=checkbox]):not([type=radio]),.drawer textarea,.drawer select{font-size:18.2px}
+  .timerbar{zoom:.88}
+
+  /* top bar */
+  .bar{padding:8px 14px;gap:8px}
+  .brand{font-size:16px;gap:9px}
+  .brand::before{width:30px;height:30px}
+  .baractions .hd-foc{width:40px;height:40px}
+  .baractions .hd-foc svg{width:16px;height:16px}
+
+  /* bottom dock */
+  .dock{height:58px;bottom:calc(12px + env(safe-area-inset-bottom,0px))}
+  .dk{min-width:50px;min-height:46px;font-size:10.5px;gap:2px}
+  .dk svg{width:20px;height:20px}
+  .dk-cap{width:48px;height:48px;margin-top:-20px}
+  .dk-cap svg{width:24px;height:24px}
+  .dk-badge{top:2px;right:6px}
+  body.has-dock .timerbar{bottom:calc(80px + env(safe-area-inset-bottom,0px))}
+  body.has-dock .toast{bottom:calc(84px + env(safe-area-inset-bottom,0px))}
+
+  /* Home: tighter hero, summary and button on one row, week and month side by side */
+  .hm{gap:14px}
+  .hm-cols{gap:12px}
+  .hm-col{gap:12px}
+  .hm-hero{border-radius:20px;padding:18px 20px 20px}
+  .hm-hello{font-size:16px}
+  .hm-next{font-size:13px}
+  .hm-quote{margin-top:12px}
+  .hm-quote blockquote{font-size:27px;line-height:1.08}
+  .hm-quote.long blockquote{font-size:22px}
+  .hm-quote blockquote::before{font-size:1.5em}
+  .hm-quote figcaption{margin-top:10px;font-size:15px}
+  .hm-qedit{margin-top:14px;padding:5px 12px;font-size:13px}
+  .hm-shape{grid-template-columns:1fr auto;gap:2px 12px}
+  .hm-shape p{font-size:16.5px}
+  .hm-shape .hm-sub{font-size:14px}
+  .hm-shape .btn{grid-column:2;grid-row:1/span 2;justify-self:end;margin-top:0;padding:10px 15px;font-size:14px}
+  .hm-rings{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .hm-ring{flex-direction:column;align-items:flex-start;gap:8px}
+  .hm-ring-art{width:56px;height:56px}
+  .hm-ring-art b{font-size:14px}
+  .hm-ring-t strong{font-size:15px}
+  .hm-ring-t small{font-size:13px}
+}

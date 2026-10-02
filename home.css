@@ -1,0 +1,163 @@
+/* Home tab. The quote hero is the one bold thing: a rising sun in the morning, a crescent moon and stars
+   after 6pm. Everything under it reuses the white gold-edged tiles from Today. */
+.hm{display:grid;gap:22px}
+
+/* ---------- hero ---------- */
+.hm-hero{position:relative;overflow:hidden;isolation:isolate;border-radius:28px;border:1px solid var(--line);
+  padding:clamp(22px,4vw,44px) clamp(22px,5vw,60px) clamp(64px,7vw,76px);box-shadow:0 24px 60px rgba(8,5,30,.45)}
+.hm-hero::before,.hm-hero::after{content:"";position:absolute;z-index:-1;pointer-events:none}
+.hm-hero.morning{background:radial-gradient(70% 80% at 0% 0%,rgba(99,102,241,.5),transparent 70%),linear-gradient(170deg,#3730a3 0%,#312e81 55%,#2a2672 100%)}
+.hm-hero.morning::before{width:min(64vw,620px);aspect-ratio:1;right:-10%;bottom:-62%;border-radius:50%;
+  background:radial-gradient(circle,rgba(253,224,71,.95) 0%,rgba(251,191,36,.8) 18%,rgba(217,119,6,.45) 42%,rgba(217,119,6,0) 70%)}
+.hm-hero.morning::after{inset:auto 0 0 0;height:38%;background:linear-gradient(0deg,rgba(180,83,9,.32),transparent)}
+.hm-hero.evening{background:radial-gradient(60% 70% at 88% 12%,rgba(165,180,252,.18),transparent 60%),linear-gradient(175deg,#1e1b4b 0%,#17153f 60%,#100e2c 100%)}
+.hm-hero.evening::before{width:clamp(64px,10vw,104px);aspect-ratio:1;top:clamp(26px,4vw,42px);right:clamp(26px,6vw,70px);border-radius:50%;
+  box-shadow:calc(clamp(64px,10vw,104px) * -.24) calc(clamp(64px,10vw,104px) * .16) 0 0 #e0e7ff;opacity:.9}
+.hm-hero.evening::after{inset:0;opacity:.7;background-image:
+  radial-gradient(1.5px 1.5px at 8% 30%,#fff 50%,transparent 52%),radial-gradient(1px 1px at 22% 12%,#fff 50%,transparent 52%),
+  radial-gradient(1.5px 1.5px at 37% 62%,#c7d2fe 50%,transparent 52%),radial-gradient(1px 1px at 51% 22%,#fff 50%,transparent 52%),
+  radial-gradient(2px 2px at 64% 74%,#fff 50%,transparent 52%),radial-gradient(1px 1px at 72% 40%,#c7d2fe 50%,transparent 52%),
+  radial-gradient(1.5px 1.5px at 93% 64%,#fff 50%,transparent 52%),radial-gradient(1px 1px at 15% 84%,#fff 50%,transparent 52%),
+  radial-gradient(1px 1px at 44% 90%,#c7d2fe 50%,transparent 52%),radial-gradient(1.5px 1.5px at 83% 90%,#fff 50%,transparent 52%)}
+.hm-hero-top{display:flex;justify-content:space-between;align-items:baseline;gap:6px 20px;flex-wrap:wrap;padding-right:clamp(72px,12vw,150px)}
+.hm-hero.morning .hm-hero-top{padding-right:0}
+.hm-hello{margin:0;font:700 19px/1.3 var(--display);letter-spacing:-.01em;color:#fff}
+.hm-next{margin:0;font-size:14px;color:var(--i200)}
+.hm-quote{margin:clamp(20px,3.4vw,36px) 0 0;max-width:min(100%,880px)}
+.hm-quote blockquote{margin:0;font:800 clamp(30px,4.6vw,58px)/1.04 var(--display);letter-spacing:-.035em;color:#fff;text-wrap:balance}
+.hm-quote blockquote::before{content:"“";display:block;height:.42em;margin-bottom:.12em;font-size:1.9em;line-height:.9;color:var(--amber)}
+.hm-quote.long blockquote{font-size:clamp(24px,3.2vw,40px);line-height:1.1}
+.hm-quote figcaption{margin-top:18px;font:600 16.5px/1.3 var(--ui);color:var(--amber)}
+.hm-hero.evening .hm-quote figcaption{color:var(--i200)}
+.hm-qedit{position:absolute;right:clamp(16px,3vw,28px);bottom:clamp(16px,2.6vw,24px);border:1px solid rgba(255,255,255,.18);background:rgba(15,12,46,.35);color:#fff;
+  border-radius:999px;padding:6px 14px;font-size:13.5px;font-weight:600;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.hm-qedit:hover{border-color:var(--amber)}
+@media (prefers-reduced-motion:no-preference){
+  .hm-quote{animation:hmIn .7s ease-out both}
+  @keyframes hmIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+}
+
+/* ---------- today's shape ---------- */
+.hm-shape{display:grid;grid-template-columns:1fr auto;gap:4px 20px;align-items:center;padding:0 4px}
+.hm-shape p{margin:0;font:500 clamp(18px,2vw,21px)/1.4 var(--ui);color:#fff}
+.hm-shape .hm-sub{grid-column:1;font-size:15px;color:var(--muted)}
+.hm-shape .btn{grid-column:2;grid-row:1/span 2;padding:11px 20px;font-size:15px}
+@media (max-width:640px){.hm-shape{grid-template-columns:1fr}.hm-shape .btn{grid-column:1;grid-row:auto;justify-self:start;margin-top:10px}}
+
+/* ---------- layout ---------- */
+.hm-cols{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:24px;align-items:start}
+@media (max-width:900px){.hm-cols{grid-template-columns:1fr}}
+.hm-col{display:grid;gap:16px;align-content:start}
+
+/* shared bits inside the white tiles */
+.hm-btn{border:1px solid #dcdff0;background:#fff;color:#1e1b4b;border-radius:999px;padding:7px 14px;font-size:14px;font-weight:700;white-space:nowrap}
+.hm-btn:hover{border-color:#d97706;color:#b45309}
+.hm-btn.main{border:0;background:linear-gradient(180deg,#d97706,#b45309);color:#fff;box-shadow:0 6px 16px rgba(180,83,9,.28)}
+.hm-btn.main:hover{color:#fff;box-shadow:0 9px 20px rgba(180,83,9,.38)}
+
+/* top 3 */
+.hm-top3{list-style:none;margin:0;padding:0}
+.hm-top3 li{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #ecedf5}
+.hm-top3 li:last-child{border-bottom:0}
+.hm-top3 .ocheck{flex:none}
+.hm-top3 li.s-done .ocheck{background:#22c55e;border-color:#22c55e}
+.hm-top-t{flex:1;min-width:0;border:0;background:none;padding:0;text-align:left;font:700 16.5px/1.35 var(--ui);color:#1e1b4b;overflow-wrap:anywhere}
+.hm-top-t:hover{color:var(--i700)}
+.hm-top3 li.s-done .hm-top-t,.hm-top3 li.s-dropped .hm-top-t{color:#9a9dc0;text-decoration:line-through}
+.hm-ic{flex:none;border:0;background:none;padding:4px;font-size:17px;line-height:1;color:#7c80b0;border-radius:8px}
+.hm-ic:hover{color:#b45309;background:#fef3c7}
+.hm-ic.star{color:#d97706;font-size:19px}
+.hm-pick p{margin:2px 0 8px;font-size:14px;color:#5b5f8f}
+.hm-chips{display:flex;flex-wrap:wrap;gap:7px}
+.hm-chip{border:1px dashed #c9cbe6;background:#fff;color:#1e1b4b;border-radius:999px;padding:6px 13px;font-size:14px;text-align:left;max-width:100%;overflow-wrap:anywhere}
+.hm-chip:hover{border-color:#d97706;border-style:solid}
+.hm-chip small{color:#b45309;font-weight:700;font-size:11.5px}
+.hm-foc{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:4px;padding-top:12px;border-top:1px solid #ecedf5}
+.hm-foc small{color:#5b5f8f;font-size:13.5px}
+
+/* rings */
+.hm-rings{display:grid;gap:12px}
+.hm-ring{display:flex;align-items:center;gap:14px;border:0;background:none;padding:4px;text-align:left;color:#1e1b4b;border-radius:14px}
+.hm-ring:hover{background:#f4f4fb}
+.hm-ring-art{position:relative;flex:none;width:68px;height:68px}
+.hm-ring-art svg{width:100%;height:100%;display:block}
+.hm-ring-art circle{fill:none;stroke-width:8}
+.hm-ring-art .bg{stroke:#eceefa}
+.hm-ring-art .fg{stroke-linecap:round}
+.hm-ring.wk .fg{stroke:#d97706}
+.hm-ring.mo .fg{stroke:var(--i600)}
+.hm-ring-art b{position:absolute;inset:0;display:grid;place-items:center;font:800 16px/1 var(--display);letter-spacing:-.02em}
+.hm-ring-t{display:grid;gap:2px}
+.hm-ring-t strong{font:800 16px/1.2 var(--display);letter-spacing:-.01em}
+.hm-ring-t small{font-size:13.5px;color:#5b5f8f}
+
+/* needs attention: red edge instead of gold */
+.td-tile.hm-alert{background:linear-gradient(180deg,#f87171,#dc2626) left/6px 100% no-repeat,#fbfbf8}
+.hm-att{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.hm-att li{display:flex;align-items:center;justify-content:space-between;gap:10px 14px;flex-wrap:wrap;font-size:15px;line-height:1.4}
+.hm-att li span{flex:1;min-width:180px}
+
+/* close-out calendar */
+.hm-streak{margin:0;display:grid;gap:2px}
+.hm-streak b{font:800 26px/1.1 var(--display);letter-spacing:-.03em;color:#1e1b4b}
+.hm-streak small{font-size:13.5px;color:#5b5f8f}
+.hm-cal{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
+.hm-dow{text-align:center;font-size:11px;font-weight:700;color:#9a9dc0}
+.hm-cell{height:24px;border:0;border-radius:6px;padding:0;background:#f0f1f7}
+.hm-cell:disabled{cursor:default}
+.hm-cell.c-closed,.hm-legend .c-closed{background:#d97706}
+.hm-cell.c-open,.hm-legend .c-open{background:#fde7c2}
+.hm-cell.c-pending{background:#fff;box-shadow:inset 0 0 0 1.5px #f2b45a}
+.hm-cell.c-empty,.hm-legend .c-empty{background:#f0f1f7}
+.hm-cell.c-future{background:transparent;box-shadow:inset 0 0 0 1px #e2e4f0}
+.hm-cell.c-today{outline:2px solid var(--i600);outline-offset:1px}
+.hm-cell:not(:disabled):hover{filter:brightness(.92)}
+.hm-legend{margin:0;display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12.5px;color:#5b5f8f}
+.hm-legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-left:4px}
+.hm-legend i:first-child{margin-left:0}
+
+/* last note */
+.hm-notetext{margin:0;white-space:pre-wrap;font-size:15.5px;line-height:1.5;color:#1e1b4b;display:-webkit-box;-webkit-line-clamp:8;-webkit-box-orient:vertical;overflow:hidden}
+.hm-refl{margin:0;font-size:14.5px;color:#3f437a;line-height:1.45}
+.hm-refl b{color:#1e1b4b}
+.hm-day{color:#9a9dc0;font-size:12.5px}
+
+/* capture */
+.hm-capbtns{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.hm-capbtns small{color:#9497bf;font-size:12.5px;margin-left:auto}
+
+/* evening close-out card (sits in the emerald container from Week/Today) */
+.hm-close{margin:0;max-width:none}
+.hm-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:16px}
+.hm-stat{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:12px 14px;display:grid;gap:2px}
+.hm-stat b{font:800 28px/1 var(--display);letter-spacing:-.03em;color:#fff}
+.hm-stat span{font-size:13px;color:var(--muted)}
+.hm-closewins{display:grid;gap:8px;margin-bottom:16px}
+.hm-closewins .lbl{margin:0}
+.hm-closewins .winlist{margin:0}
+.hm-report{margin:0 0 14px;padding:10px 14px;border-radius:12px;background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.3);color:#fde68a;font-size:14.5px}
+
+/* star on Today's rows */
+.hm-star{flex:none;align-self:center;border:0;background:none;padding:4px 2px;font-size:21px;line-height:1;color:#c3c6e0;border-radius:8px}
+.hm-star:hover{color:#d97706}
+.hm-star.on{color:#d97706}
+
+/* quotes dialog */
+.hm-qlist{list-style:none;margin:0;padding:0;display:grid;gap:8px;max-height:44vh;overflow-y:auto}
+.hm-qlist li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center;background:var(--soft);border:1px solid var(--line-soft);border-radius:12px;padding:10px 12px}
+.hm-qtext p{margin:0;font-size:15px;line-height:1.4;color:#fff}
+.hm-qtext small{color:var(--faint);font-size:13px}
+.hm-slot{width:auto;padding:6px 8px;font-size:13.5px}
+.hm-qadd{display:grid;gap:8px}
+.hm-qadd .lbl{margin:0}
+.hm-qrow{display:grid;grid-template-columns:1fr auto;gap:8px}
+@media (max-width:520px){.hm-qlist li{grid-template-columns:1fr auto}.hm-qlist li .hm-slot{grid-column:1}.hm-qrow{grid-template-columns:1fr}}
+
+@media (max-width:560px){
+  .hm-hero{border-radius:22px}
+  .hm-qedit{position:static;margin-top:20px}
+  .hm-hero{padding-bottom:24px}
+  .hm-stat b{font-size:22px}
+  .hm-hero.evening::before{width:44px;top:18px;right:18px}
+  .hm-hero-top{padding-right:56px}
+}

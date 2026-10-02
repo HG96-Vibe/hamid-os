@@ -1,0 +1,48 @@
+/* Opening animation (option C), phone-safe version.
+   Nothing waits on fonts or the image mid-animation: it starts once both are ready (or after 0.8s at most).
+   The bulb "switches on" by fading a dark cover over it instead of animating a CSS filter, and the name uses a plain colour,
+   because iPhone Safari flickers when filters, masks and gradient text are animated. Only opacity and transform move. */
+.intro{position:fixed;inset:0;z-index:1000;background:#07051a;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  transition:opacity .5s ease,visibility .5s ease;cursor:pointer;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
+.intro.in-out{opacity:0;visibility:hidden;pointer-events:none}
+.in-c{display:flex;flex-direction:column;align-items:center;width:100%;opacity:0;transition:opacity .25s ease}
+.intro.in-go .in-c{opacity:1}
+.in-bw{position:relative;width:150px;height:183px}
+.in-glow{position:absolute;left:50%;top:38%;width:300px;height:300px;margin:-150px 0 0 -150px;border-radius:50%;opacity:0;transform:scale(.4);will-change:opacity,transform;
+  background:radial-gradient(circle,rgba(253,224,71,.55) 0%,rgba(217,119,6,.28) 35%,rgba(7,5,26,0) 68%)}
+.in-bulb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+  -webkit-mask-image:radial-gradient(closest-side,#000 55%,transparent 100%);mask-image:radial-gradient(closest-side,#000 55%,transparent 100%)}
+.in-dim{position:absolute;inset:-2px;background:#07051a;opacity:.9;will-change:opacity}
+.in-stage{position:relative;margin-top:22px;width:100%}
+.in-list{display:flex;flex-direction:column;align-items:center;gap:2px;will-change:opacity,transform}
+.in-li{position:relative;font:800 clamp(34px,4.6vw,48px)/1.12 'Bricolage Grotesque','Segoe UI',system-ui,sans-serif;letter-spacing:-.035em;color:rgba(255,255,255,.14)}
+.in-li::after{content:attr(data-w);position:absolute;inset:0;color:#fbbf24;opacity:0;will-change:opacity}
+.in-name{position:absolute;top:0;left:0;right:0;text-align:center;opacity:0;transform:translateY(16px);will-change:opacity,transform;
+  font:800 clamp(38px,5vw,54px)/1.2 'Bricolage Grotesque','Segoe UI',system-ui,sans-serif;letter-spacing:-.035em;color:#fbbf24;text-shadow:0 0 24px rgba(251,191,36,.35)}
+.in-skip{position:absolute;left:0;right:0;bottom:calc(34px + env(safe-area-inset-bottom,0px));text-align:center;font:600 12px/1 'Source Sans 3',system-ui,sans-serif;letter-spacing:.08em;color:rgba(199,210,254,.55)}
+@keyframes in-on{to{opacity:1}}
+@keyframes in-away{to{opacity:0;transform:translateY(-10px)}}
+@keyframes in-flick{0%,22%{opacity:.9}25%{opacity:.05}30%{opacity:.82}44%{opacity:.78}48%{opacity:0}54%{opacity:.5}66%,100%{opacity:0}}
+@keyframes in-bloom{to{opacity:1;transform:scale(1)}}
+@keyframes in-settle{to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:no-preference){
+  .in-go .in-l0::after{animation:in-on .3s ease .2s forwards}
+  .in-go .in-l1::after{animation:in-on .3s ease .52s forwards}
+  .in-go .in-l2::after{animation:in-on .3s ease .84s forwards}
+  .in-go .in-l3::after{animation:in-on .3s ease 1.16s forwards}
+  .in-go .in-l4::after{animation:in-on .3s ease 1.48s forwards}
+  .in-go .in-dim{animation:in-flick .9s linear 1.8s forwards}
+  .in-go .in-glow{animation:in-bloom .7s ease-out 2.2s forwards}
+  .in-go .in-list{animation:in-away .4s ease 2.6s forwards}
+  .in-go .in-name{animation:in-settle .6s cubic-bezier(.2,.7,.2,1) 2.8s forwards}
+}
+@media (prefers-reduced-motion:reduce){
+  .in-list{display:none}
+  .in-name{position:static;display:block;opacity:1;transform:none}
+  .in-dim{opacity:0}
+  .in-glow{opacity:1;transform:none}
+}
+/* Phones and small tablets: no opening screen at all. */
+@media (max-width:900px){
+  .intro{display:none!important}
+}

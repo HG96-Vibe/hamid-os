@@ -1,0 +1,21 @@
+/* Week tab: priority cards reuse the Month card styles; these add the outcome tag, day tiles and number tiles. */
+.wk-card{min-height:196px}
+.wk-up{justify-self:start;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px;font-weight:700;color:var(--i700);background:#eef0ff;border-radius:999px;padding:3px 10px}
+.wk-up.none{color:#8e91b6;background:#f2f3f8;font-weight:600}
+.wk-sec{font:800 20px/1.2 var(--display);letter-spacing:-.02em;color:#fff;margin:36px 0 12px}
+.wk-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}
+@media (max-width:760px){.wk-days{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.wk-day{border:0;text-align:left;background:#fbfbf8;color:#1e1b4b;border-radius:12px;padding:10px 10px 12px;display:grid;gap:7px;box-shadow:0 10px 24px rgba(8,5,30,.3);cursor:pointer;transition:transform .15s}
+.wk-day:hover{transform:translateY(-2px)}
+.wk-day.today{box-shadow:0 0 0 3px var(--amber),0 10px 24px rgba(8,5,30,.3)}
+.wk-day b{font:800 14px/1 var(--display)}
+.wk-day small{font-size:12px;color:#5b5f8f}
+.wk-bar{height:6px;border-radius:99px;background:#e6e8f6;overflow:hidden}
+.wk-bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#fbbf24,#d97706 60%,#b45309)}
+.wk-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+@media (max-width:720px){.wk-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.wk-kpi{background:#fbfbf8;color:#1e1b4b;border-radius:14px;padding:14px 16px;box-shadow:0 10px 24px rgba(8,5,30,.3);display:grid;gap:2px}
+.wk-kpi span{font-size:11.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#b45309}
+.wk-kpi b{font:800 28px/1.05 var(--display);letter-spacing:-.03em}
+.wk-kpi small{font-size:12.5px;color:#5b5f8f}
+@media (prefers-reduced-motion:reduce){.wk-day{transition:none}.wk-day:hover{transform:none}}

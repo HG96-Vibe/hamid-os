@@ -1,0 +1,43 @@
+/* Hamid OS branding. The signature uses a handwriting font until the real signature is supplied. */
+.br-txt{display:flex;flex-direction:column;gap:4px;min-width:0}
+.br-name{font:800 18px/1 var(--display);letter-spacing:-.03em;color:#fff;white-space:nowrap}
+.br-tag{font:600 10.5px/1 var(--ui);letter-spacing:.02em;color:var(--i200);white-space:nowrap}
+@media (min-width:901px){
+  .brand{gap:11px;margin-right:2px}
+  .bar .nav button{padding:9px 11px}
+}
+@media (min-width:901px) and (max-width:1180px){
+  .br-tag{display:none}
+}
+@media (max-width:900px){
+  .br-name{font-size:16px}
+  .br-tag{font-size:9.5px}
+}
+
+/* profile strip on Home */
+.pf{display:flex;align-items:center;gap:22px;padding:20px 26px;border-radius:22px;background:rgba(15,13,48,.45);border:1px solid var(--line)}
+.pf-av{width:76px;height:76px;flex:none;border-radius:50%;display:grid;place-items:center;color:var(--i200);
+  background:linear-gradient(160deg,var(--i700),var(--i900));border:2px solid rgba(252,211,77,.65);box-shadow:0 0 0 4px rgba(252,211,77,.12)}
+.pf-av svg{width:38px;height:38px}
+.pf-main{flex:1;min-width:0;display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 18px}
+.pf-sig{font:400 62px/.95 'Mrs Saint Delafield',cursive;color:var(--amber);text-shadow:0 0 22px rgba(251,191,36,.35);padding-right:8px}
+.pf-motto{font:600 14.5px/1.3 var(--ui);color:var(--i200);letter-spacing:.01em}
+.pf-streak{display:flex;flex-direction:column;align-items:flex-end;gap:4px;text-align:right}
+.pf-streak b{font:800 28px/1 var(--display);letter-spacing:-.02em;color:#fff}
+.pf-streak small{font-size:13px;color:var(--faint)}
+@media (max-width:700px){
+  .pf{gap:14px;padding:16px 16px;border-radius:20px}
+  .pf-av{width:60px;height:60px}
+  .pf-av svg{width:30px;height:30px}
+  .pf-main{flex-direction:column;align-items:flex-start;gap:4px}
+  .pf-sig{font-size:52px}
+  .pf-motto{font-size:13px}
+  .pf-streak b{font-size:21px}
+  .pf-streak small{font-size:12px}
+}
+
+/* end of the desktop opening animation: Hamid OS, signature, motto */
+.in-name .in-os,.in-name .in-sig,.in-name .in-mt{display:block}
+.in-name .in-os{font:800 clamp(38px,5vw,54px)/1.1 'Bricolage Grotesque','Segoe UI',system-ui,sans-serif;letter-spacing:-.035em;color:#fff;text-shadow:none}
+.in-name .in-sig{margin-top:2px;font:400 clamp(52px,6vw,68px)/1 'Mrs Saint Delafield',cursive;letter-spacing:0;color:#fbbf24}
+.in-name .in-mt{margin-top:12px;font:600 15px/1 'Source Sans 3',system-ui,sans-serif;letter-spacing:.04em;color:#c7d2fe;text-shadow:none}

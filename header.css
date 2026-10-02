@@ -1,0 +1,57 @@
+/* Header, option B: floating capsule on desktop, bottom dock on phones. The bulb is the logo. */
+.brand::before{content:"";background:url(/icon-v2.png) center/cover no-repeat;border-radius:50%;box-shadow:0 0 0 2px rgba(252,211,77,.35)}
+.hd-i{display:grid;place-items:center}
+.dock{display:none}
+
+@media (min-width:901px){
+  .bar{width:min(1140px,calc(100% - 32px));margin:14px auto 0;top:calc(env(safe-area-inset-top,0px) + 12px);padding:8px 10px;gap:12px;flex-wrap:nowrap;
+    border-radius:999px;background:rgba(39,35,104,.9);border:1px solid rgba(199,210,254,.18);box-shadow:0 14px 34px rgba(8,5,30,.4)}
+  .brand{font-size:0;gap:0;margin:0}
+  .brand::before{width:44px;height:44px}
+  .bar .nav{min-width:0;padding:4px;gap:2px;border-radius:999px;background:rgba(15,13,48,.55)}
+  .bar .nav button{border-radius:999px;padding:9px 13px;color:var(--i200)}
+  .bar .nav button:hover{color:#fff;background:rgba(255,255,255,.06)}
+  .bar .nav button[aria-current="page"]{background:#fff;color:var(--i950)}
+  .bar .nav button[aria-current="page"]:hover{background:#fff;color:var(--i950)}
+  .baractions{gap:8px}
+  .baractions .hd-cap{width:44px;height:44px;padding:0;display:grid;place-items:center;background:transparent;border-color:rgba(199,210,254,.25)}
+  .baractions .hd-cap .hd-l{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  .baractions .hd-foc{height:44px;padding:0 18px;display:flex;align-items:center;gap:7px;border:0;font-weight:700;
+    background:linear-gradient(180deg,var(--amber-2),var(--amber-3));box-shadow:0 8px 20px rgba(180,83,9,.3)}
+}
+
+@media (max-width:900px){
+  .bar{flex-wrap:nowrap;padding:10px 16px;gap:10px;background:rgba(30,27,75,.88)}
+  .brand{flex:1;font-size:18px}
+  .brand::before{width:38px;height:38px}
+  .bar .nav{display:none}
+  .baractions .hd-cap{display:none}
+  .baractions .hd-foc{width:44px;height:44px;padding:0;display:grid;place-items:center;border:0;border-radius:50%;
+    background:linear-gradient(180deg,var(--amber-2),var(--amber-3))}
+  .baractions .hd-foc .hd-l{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  .dock{position:fixed;left:50%;transform:translateX(-50%);width:min(480px,calc(100% - 28px));bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:30;height:68px;
+    display:flex;align-items:center;justify-content:space-around;padding:0 6px;border-radius:999px;
+    background:rgba(39,35,104,.95);border:1px solid rgba(199,210,254,.2);box-shadow:0 14px 34px rgba(8,5,30,.5);
+    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+  .dk{position:relative;border:0;background:none;color:var(--i200);min-width:54px;min-height:52px;border-radius:16px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font:600 11.5px/1 var(--ui)}
+  .dk[aria-current="page"]{color:var(--amber)}
+  .dk-cap{width:56px;height:56px;margin-top:-26px;border:0;border-radius:50%;background:#fff;color:var(--i950);
+    display:grid;place-items:center;box-shadow:0 8px 20px rgba(8,5,30,.45)}
+  .dk-badge{position:absolute;top:3px;right:8px;min-width:17px;height:17px;padding:0 4px;border-radius:999px;background:var(--amber-2);color:#fff;font:700 10.5px/17px var(--ui);text-align:center}
+  .dk-badge:empty{display:none}
+  body.has-dock main{padding-bottom:calc(120px + env(safe-area-inset-bottom,0px))}
+  body.has-dock.has-timer main{padding-bottom:calc(210px + env(safe-area-inset-bottom,0px))}
+  body.has-dock .timerbar{bottom:calc(94px + env(safe-area-inset-bottom,0px))}
+  body.has-dock .toast{bottom:calc(96px + env(safe-area-inset-bottom,0px))}
+  body.has-dock.has-timer .toast{bottom:calc(180px + env(safe-area-inset-bottom,0px))}
+}
+
+/* "More" sheet that slides up from the dock */
+dialog.dk-sheet{margin:auto auto 0;width:100%;max-width:520px;max-height:80%;border-radius:24px 24px 0 0;
+  padding:20px 16px calc(20px + env(safe-area-inset-bottom,0px))}
+.dk-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:14px}
+.dk-item{min-height:58px;padding:0 16px;border-radius:16px;border:1px solid var(--line);background:var(--soft);color:#fff;
+  display:flex;align-items:center;justify-content:space-between;font:700 16px/1 var(--display)}
+.dk-item.on{background:#fff;color:var(--i950)}
+.dk-close{width:100%;min-height:48px}
