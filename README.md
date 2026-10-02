@@ -38,7 +38,7 @@ features can be added without editing the core file. If `window.DS` is missing, 
 | `account.js` | Adds the sign-out row to Home. |
 | `header.js` | The header: a floating capsule on desktop and a bottom dock on phones. |
 | `brand.js` | Hamid OS branding: the name and motto, the profile strip on Home, the tab title and sign-in screen. |
-| `display.js` | Display size for computers (Auto, 100%, 90%, 80%, 70%) and a compact quote banner on Home, set in Settings and saved per device. |
+| `display.js` | Display size for computers (Auto, 100%, 90%, 80% default, 70%) and a compact quote banner on Home, set in Settings and saved per device. |
 | `theme.js` | The dot-grid background and heading styling. Loads before `app.js` and does not depend on `window.DS`. |
 | `intro.js` | Opening animation (desktop only, skippable). Standalone, does not depend on `window.DS`. |
 | `sw.js` | Service worker. Shows push notifications and opens the right page when one is tapped. |

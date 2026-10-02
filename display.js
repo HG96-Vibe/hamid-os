@@ -1,5 +1,5 @@
 // Display size for computers: scales the whole app down so more fits on one screen.
-// The choice is kept per device (localStorage), so phones and other computers are unaffected.
+// Defaults to 80%. The choice is kept per device (localStorage); phones are unaffected.
 // Also an option to shrink the quote banner on Home. Adds a "Display size" section to Settings.
 (function () {
   'use strict';
@@ -9,7 +9,7 @@
   const root = document.documentElement;
   const desktop = window.matchMedia('(min-width:901px)');
 
-  const read = () => { try { return localStorage.getItem(KEY) || '100'; } catch (e) { return '100'; } };
+  const read = () => { try { return localStorage.getItem(KEY) || '80'; } catch (e) { return '80'; } };
   const write = v => { try { localStorage.setItem(KEY, v); } catch (e) {} };
   const readHero = () => { try { return localStorage.getItem(HERO) || 'full'; } catch (e) { return 'full'; } };
   const writeHero = v => { try { localStorage.setItem(HERO, v); } catch (e) {} };
