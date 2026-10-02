@@ -11,7 +11,7 @@
 
   const read = () => { try { return localStorage.getItem(KEY) || '80'; } catch (e) { return '80'; } };
   const write = v => { try { localStorage.setItem(KEY, v); } catch (e) {} };
-  const readHero = () => { try { return localStorage.getItem(HERO) || 'full'; } catch (e) { return 'full'; } };
+  const readHero = () => { try { return localStorage.getItem(HERO) || 'smaller'; } catch (e) { return 'smaller'; } };
   const writeHero = v => { try { localStorage.setItem(HERO, v); } catch (e) {} };
   // Auto: shrink to fit the window's height, between 70% and 100%.
   const autoZoom = () => Math.min(1, Math.max(0.7, Math.round(window.innerHeight / 1050 * 100) / 100));
@@ -22,6 +22,7 @@
     root.style.setProperty('--ds-zoom', String(z));
     root.classList.toggle('ds-zoomed', z !== 1);
     root.classList.toggle('ds-hero-compact', readHero() === 'compact');
+    root.classList.toggle('ds-hero-smaller', readHero() === 'smaller');
   }
   apply();
   window.addEventListener('resize', () => { if (read() === 'auto') apply(); });
@@ -41,9 +42,9 @@
         SIZES.map(([v, l]) => el('label', {}, el('input', { type: 'radio', name: 'ds-size', value: v, checked: v === cur,
           onchange: () => { write(v); apply(); } }), el('span', {}, l)))),
       desktop.matches ? null : el('p', { class: 'meta', style: 'margin:10px 0 0' }, 'You are on a small screen, so this has no effect here.'),
-      el('p', { class: 'meta', style: 'margin:18px 0 10px' }, 'Quote banner on Home. Compact keeps the quote but takes about a third of the height.'),
+      el('p', { class: 'meta', style: 'margin:18px 0 10px' }, 'Quote banner on Home. Smaller is the full banner at 70%. Compact keeps the quote on one or two lines.'),
       el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Quote banner' },
-        [['full', 'Full'], ['compact', 'Compact']].map(([v, l]) => el('label', {}, el('input', { type: 'radio', name: 'ds-hero', value: v, checked: v === readHero(),
+        [['full', 'Full'], ['smaller', 'Smaller'], ['compact', 'Compact']].map(([v, l]) => el('label', {}, el('input', { type: 'radio', name: 'ds-hero', value: v, checked: v === readHero(),
           onchange: () => { writeHero(v); apply(); } }), el('span', {}, l)))));
     const home = wrap.querySelector('#hm-settings');
     if (home) home.after(sec);

@@ -19,3 +19,6 @@ html.ds-hero-compact .hm-hero.morning::before{width:min(40vw,320px);bottom:-90%}
 html.ds-hero-compact .hm-hero-top{padding-right:90px}
 html.ds-hero-compact .hm-qedit{bottom:16px;right:18px}
 @media (max-width:560px){html.ds-hero-compact .hm-quote{padding-right:0}html.ds-hero-compact .hm-hero{padding:18px 18px 56px}}
+
+/* Smaller quote banner (the default): the full banner at 70%, still full width */
+html.ds-hero-smaller .hm-hero{zoom:.7}
