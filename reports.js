@@ -71,7 +71,7 @@
     const kpi = (lbl, v, note) => el('div', { class: 'wk-kpi' }, el('span', {}, lbl), el('b', {}, v), note ? el('small', {}, note) : null);
     const tile = (title, ...kids) => el('section', { class: 'td-tile rp-tile' }, el('h2', {}, title), ...kids);
     const statusWord = s => s === 'done' ? (W ? 'Done' : 'Achieved') : s === 'dropped' ? 'Dropped' : `Rolling into next ${W ? 'week' : 'month'}`;
-    const ctx = Object.entries(d.focus_by_context || {}).sort((a, b) => b[1] - a[1]);
+    const ctx = Object.entries(d.focus_by_project || d.focus_by_context || {}).sort((a, b) => b[1] - a[1]);
     const top = ctx.length ? ctx[0][1] : 1;
     const next = W ? addDays(r.period_start, 7) : addMonths(r.period_start, 1);
     return el('div', {},
@@ -87,7 +87,7 @@
         tile(W ? 'Weekly priorities' : 'Monthly outcomes',
           (d.items || []).length ? el('ul', { class: 'rp-list' }, d.items.map(i => el('li', { class: 's-' + i.status },
             el('span', { class: 'rp-dot' }), el('span', {}, el('b', {}, i.title), el('small', {}, statusWord(i.status) + (i.kids ? ` \u00b7 ${i.kids_done}/${i.kids} ${W ? 'daily tasks' : 'weekly priorities'}` : '')))))) : el('p', { class: 'td-none' }, 'None were set.')),
-        tile('Focus by context', ctx.length ? el('div', { class: 'rp-bars' }, ctx.map(([k, v]) => el('div', { class: 'rp-bar' },
+        tile(d.focus_by_project ? 'Focus by project' : 'Focus by context', ctx.length ? el('div', { class: 'rp-bars' }, ctx.map(([k, v]) => el('div', { class: 'rp-bar' },
           el('span', {}, k), el('div', { class: 'obar' }, el('i', { style: `width:${Math.round(v / top * 100)}%` })), el('b', {}, mins(v))))) : el('p', { class: 'td-none' }, 'No focus blocks logged.')),
         tile('Wins', (d.wins || []).length ? el('ul', { class: 'td-wins' }, d.wins.map(w => el('li', {}, el('span', {}, w.body, el('small', { class: 'rp-day' }, ' \u00b7 ' + fmt(w.day, { weekday: 'short', day: 'numeric' })))))) : el('p', { class: 'td-none' }, 'No wins logged.')),
         (d.notes || []).length ? tile('From your notes', el('ul', { class: 'rp-notes' }, d.notes.map(n => el('li', {}, el('b', {}, fmt(n.day, { weekday: 'short', day: 'numeric', month: 'short' })), el('p', {}, n.notes))))) : null,

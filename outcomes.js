@@ -14,8 +14,6 @@
     : t.progress != null ? `${t.progress}%${s.total ? ` \u00b7 ${s.done}/${s.total} weekly` : ''}`
     : s.total ? `${s.done}/${s.total} weekly done` : 'No progress yet';
   const localInput = v => { const d = new Date(v); return `${iso(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
-  const lastCtx = () => { try { return localStorage.getItem('ds_ctx') || ''; } catch (e) { return ''; } };
-  const saveCtx = v => { try { localStorage.setItem('ds_ctx', v); } catch (e) {} };
   const normaliseUrl = v => {
     let u = (v || '').trim(); if (!u) return null;
     if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
@@ -57,7 +55,7 @@
       const s = stats[t.id] || { done: 0, total: 0 };
       const fill = fillOf(t, s);
       const links = t.task_links?.[0]?.count || 0, logs = t.task_notes?.[0]?.count || 0;
-      grid.append(el('article', { class: `outcome s-${t.status}${panel.id === t.id ? ' open' : ''}`, 'data-oid': t.id,
+      grid.append(el('article', { class: `outcome s-${t.status}${panel.id === t.id ? ' open' : ''}`, 'data-oid': t.id, 'data-pid': t.project_id || '',
         onclick: e => { if (!e.target.closest('button,a,input')) openPanel(t.id); } },
         el('div', { class: 'otop' },
           el('span', { class: 'onum', 'aria-hidden': 'true' }, pad(i + 1)),
@@ -71,19 +69,19 @@
         el('div', { class: 'ofoot' },
           el('div', { class: 'obar', role: 'img', 'aria-label': `${fill}% progress` }, el('i', { style: `width:${fill}%` })),
           el('span', { class: 'oprog' }, labelOf(t, s)),
-          t.context ? el('span', { class: 'otag' }, t.context) : null),
+          DS.proj ? DS.proj.chip(t) : (t.context ? el('span', { class: 'otag' }, t.context) : null)),
         links || logs ? el('div', { class: 'ometa' }, links ? `\ud83d\udd17 ${links}` : null, links && logs ? ' \u00b7 ' : null, logs ? `${logs} update${logs === 1 ? '' : 's'}` : null) : null));
     });
 
     if (active.length < MAX) {
-      const ctx = el('input', { class: 'octx', placeholder: 'context', list: 'ctx-month', value: lastCtx(), 'aria-label': 'Context for new outcome' });
+      const ctx = DS.proj.picker({ value: DS.proj.lastPid(), ariaLabel: 'Project for new outcome' });
       const input = el('input', { class: 'onew', 'data-add': 'month', placeholder: 'Type an outcome\u2026', 'aria-label': 'Add an outcome for this month', maxlength: '500',
         onkeydown: async e => {
           if (e.key !== 'Enter' || !input.value.trim()) return;
           e.preventDefault();
           const title = input.value.trim(); input.value = '';
-          saveCtx(ctx.value.trim());
-          await q(sb.from('tasks').insert({ user_id: uid(), horizon: 'month', period_start: ms, title, context: ctx.value.trim() || null, position: Date.now() / 1000 }));
+          DS.proj.saveLast(ctx.value);
+          await q(sb.from('tasks').insert({ user_id: uid(), horizon: 'month', period_start: ms, title, project_id: ctx.value || null, position: Date.now() / 1000 }));
           state.focusAdd = 'month';
           refresh();
         } });
@@ -91,8 +89,7 @@
       grid.append(el('div', { class: 'outcome-new' },
         el('span', { class: 'onum plus', 'aria-hidden': 'true' }, '+'),
         input,
-        el('div', { class: 'onewfoot' }, ctx, el('small', {}, `Enter to add \u00b7 ${left} ${left === 1 ? 'slot' : 'slots'} left`)),
-        el('datalist', { id: 'ctx-month' }, CONTEXTS.map(c => el('option', { value: c })))));
+        el('div', { class: 'onewfoot' }, ctx, el('small', {}, `Enter to add \u00b7 ${left} ${left === 1 ? 'slot' : 'slots'} left`))));
     } else {
       grid.append(el('div', { class: 'ofull' }, 'Ten outcomes set. Finish or drop one to add another.'));
     }
@@ -253,8 +250,7 @@
     if (panel.tab === 'overview') {
       const range = el('input', { type: 'range', min: '0', max: '100', step: '5', value: String(t.progress ?? fill), class: 'op-range', 'aria-label': 'Progress percentage',
         onchange: keep(() => save({ progress: +range.value })) });
-      const ctx = el('input', { class: 'op-field', value: t.context || '', list: 'ctx-op', placeholder: 'e.g. Augustova',
-        onchange: keep(() => save({ context: ctx.value.trim() || null })) });
+      const ctx = DS.proj.picker({ value: t.project_id || '', className: 'op-field', ariaLabel: 'Project', onChange: keep(v => save({ project_id: v })) });
       const doneDef = el('textarea', { class: 'op-field', rows: '2', value: t.done_def || '', placeholder: 'What will be true when this is achieved?',
         onchange: keep(() => save({ done_def: doneDef.value.trim() || null })) });
       const remind = el('input', { class: 'op-field', type: 'datetime-local', value: t.remind_at ? localInput(t.remind_at) : '',
@@ -272,7 +268,7 @@
               outcomes.map(o => { const op = el('option', { value: o.id }, o.title); if (o.id === t.parent_id) op.selected = true; return op; }))) : null,
           el('label', { class: 'op-label' }, 'Done looks like', doneDef),
           el('div', { class: 'op-two' },
-            el('label', { class: 'op-label' }, 'Context', ctx, el('datalist', { id: 'ctx-op' }, CONTEXTS.map(c => el('option', { value: c })))),
+            el('label', { class: 'op-label' }, 'Project', ctx),
             el('label', { class: 'op-label' }, 'Reminder', remind))),
         D ? null : el('section', { class: 'op-sec' }, el('h4', {}, L.kids, weeks.length ? el('span', { class: 'op-cnt' }, `${s.done}/${s.total}`) : null),
           weeks.length ? el('ul', { class: 'op-weeks' }, weeks.map(w => el('li', { class: w.status === 'done' ? 'done' : '' },

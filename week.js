@@ -7,8 +7,6 @@
   const { sb, q, el, state, uid, toast, refresh, setTask, fetchTasks, fetchReview,
     pad, iso, parse, today, addDays, weekStart, monthStart, fmt, shortDay, timeAgo, CONTEXTS } = DS;
 
-  const lastCtx = () => { try { return localStorage.getItem('ds_ctx') || ''; } catch (e) { return ''; } };
-  const saveCtx = v => { try { localStorage.setItem('ds_ctx', v); } catch (e) {} };
   const mins = m => m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? ' ' + (m % 60) + 'm' : ''}`;
   const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
   const short = s => fmt(s, { day: 'numeric', month: 'short' });
@@ -43,7 +41,7 @@
         : s.total ? `${s.done}/${s.total} daily done` : 'No daily tasks linked';
       const parent = t.parent_id && outcomeTitle[t.parent_id];
       const links = t.task_links?.[0]?.count || 0, logs = t.task_notes?.[0]?.count || 0;
-      grid.append(el('article', { class: `outcome wk-card s-${t.status}`, 'data-oid': t.id,
+      grid.append(el('article', { class: `outcome wk-card s-${t.status}`, 'data-oid': t.id, 'data-pid': t.project_id || '',
         onclick: e => { if (!e.target.closest('button,a,input')) DS.openItem(t.id); } },
         el('div', { class: 'otop' },
           el('span', { class: 'onum', 'aria-hidden': 'true' }, pad(i + 1)),
@@ -58,27 +56,26 @@
         el('div', { class: 'ofoot' },
           el('div', { class: 'obar', role: 'img', 'aria-label': `${fill}% progress` }, el('i', { style: `width:${fill}%` })),
           el('span', { class: 'oprog' }, label),
-          t.context ? el('span', { class: 'otag' }, t.context) : null),
+          DS.proj ? DS.proj.chip(t) : (t.context ? el('span', { class: 'otag' }, t.context) : null)),
         links || logs ? el('div', { class: 'ometa' }, links ? `\ud83d\udd17 ${links}` : null, links && logs ? ' \u00b7 ' : null, logs ? `${logs} update${logs === 1 ? '' : 's'}` : null) : null));
     });
 
     /* add card (no cap on weekly priorities) */
-    const ctx = el('input', { class: 'octx', placeholder: 'context', list: 'ctx-week', value: lastCtx(), 'aria-label': 'Context for new priority' });
+    const ctx = DS.proj.picker({ value: DS.proj.lastPid(), ariaLabel: 'Project for new priority' });
     const input = el('input', { class: 'onew', 'data-add': 'week', placeholder: 'Type a priority\u2026', 'aria-label': 'Add a priority for this week', maxlength: '500',
       onkeydown: async e => {
         if (e.key !== 'Enter' || !input.value.trim()) return;
         e.preventDefault();
         const title = input.value.trim(); input.value = '';
-        saveCtx(ctx.value.trim());
-        await q(sb.from('tasks').insert({ user_id: uid(), horizon: 'week', period_start: ws, title, context: ctx.value.trim() || null, position: Date.now() / 1000 }));
+        DS.proj.saveLast(ctx.value);
+        await q(sb.from('tasks').insert({ user_id: uid(), horizon: 'week', period_start: ws, title, project_id: ctx.value || null, position: Date.now() / 1000 }));
         state.focusAdd = 'week';
         refresh();
       } });
     grid.append(el('div', { class: 'outcome-new' },
       el('span', { class: 'onum plus', 'aria-hidden': 'true' }, '+'),
       input,
-      el('div', { class: 'onewfoot' }, ctx, el('small', {}, 'Enter to add \u00b7 link it to an outcome in its panel')),
-      el('datalist', { id: 'ctx-week' }, CONTEXTS.map(c => el('option', { value: c })))));
+      el('div', { class: 'onewfoot' }, ctx, el('small', {}, 'Enter to add \u00b7 link it to an outcome in its panel'))));
 
     /* the seven days */
     const t0 = today();

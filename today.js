@@ -7,8 +7,6 @@
   const { sb, q, el, state, uid, toast, refresh, setTask, carry, fetchTasks, fetchReview,
     pad, today, addDays, weekStart, monthStart, fmt, dayName, CONTEXTS } = DS;
 
-  const lastCtx = () => { try { return localStorage.getItem('ds_ctx') || ''; } catch (e) { return ''; } };
-  const saveCtx = v => { try { localStorage.setItem('ds_ctx', v); } catch (e) {} };
   const mins = m => m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? ' ' + (m % 60) + 'm' : ''}`;
   const hm = v => { const x = new Date(v); return `${pad(x.getHours())}:${pad(x.getMinutes())}`; };
   let draft = null; // latest typed notes, so a page refresh mid-save never shows an older copy
@@ -36,7 +34,7 @@
       const notes = t.task_notes?.[0]?.count || 0, links = t.task_links?.[0]?.count || 0;
       const chips = [
         parent ? el('span', { class: 'td-up', title: 'Supports this week\u2019s priority' }, `\u2191 ${parent}`) : null,
-        t.context ? el('span', { class: 'otag' }, t.context) : null,
+        DS.proj ? DS.proj.chip(t) : (t.context ? el('span', { class: 'otag' }, t.context) : null),
         t.carry_count >= 1 ? el('span', { class: 'td-chip' + (t.carry_count >= 3 ? ' warn' : ''), title: 'Times this has been carried over' }, `carried \u00d7${t.carry_count}`) : null,
         t.status === 'carried' ? el('span', { class: 'td-chip' }, 'moved on') : null,
         t.remind_at && !t.reminded_at && t.status === 'open' ? el('span', { class: 'td-chip', title: 'Reminder set' }, `\ud83d\udd14 ${hm(t.remind_at)}`) : null,
@@ -44,7 +42,7 @@
         notes ? el('span', { class: 'td-chip', title: 'Updates' }, `\u270e ${notes}`) : null,
         links ? el('span', { class: 'td-chip', title: 'Links' }, `\ud83d\udd17 ${links}`) : null
       ].filter(Boolean);
-      list.append(el('article', { class: `td-row s-${t.status}`, 'data-oid': t.id,
+      list.append(el('article', { class: `td-row s-${t.status}`, 'data-oid': t.id, 'data-pid': t.project_id || '',
         onclick: e => { if (!e.target.closest('button,a,input')) DS.openItem(t.id); } },
         el('button', { class: 'ocheck', disabled: t.status === 'carried',
           'aria-label': t.status === 'done' ? `Mark "${t.title}" not done` : `Mark "${t.title}" done`,
@@ -56,19 +54,18 @@
     if (!tasks.length) list.append(el('p', { class: 'td-empty' }, isToday ? 'Nothing written yet. What has to happen today?' : 'Nothing was written for this day.'));
 
     /* add strip */
-    const ctx = el('input', { class: 'octx', placeholder: 'context', list: 'ctx-day', value: lastCtx(), 'aria-label': 'Context for new task' });
+    const ctx = DS.proj.picker({ value: DS.proj.lastPid(), ariaLabel: 'Project for new task' });
     const input = el('input', { class: 'onew', 'data-add': 'day', placeholder: 'Write a task and press Enter', 'aria-label': 'Add a task', maxlength: '500',
       onkeydown: async e => {
         if (e.key !== 'Enter' || !input.value.trim()) return;
         e.preventDefault();
         const title = input.value.trim(); input.value = '';
-        saveCtx(ctx.value.trim());
-        await q(sb.from('tasks').insert({ user_id: uid(), horizon: 'day', period_start: d, title, context: ctx.value.trim() || null, position: Date.now() / 1000 }));
+        DS.proj.saveLast(ctx.value);
+        await q(sb.from('tasks').insert({ user_id: uid(), horizon: 'day', period_start: d, title, project_id: ctx.value || null, position: Date.now() / 1000 }));
         state.focusAdd = 'day';
         refresh();
       } });
-    list.append(el('div', { class: 'td-add' }, el('span', { class: 'td-plus', 'aria-hidden': 'true' }, '+'), input, ctx,
-      el('datalist', { id: 'ctx-day' }, CONTEXTS.map(c => el('option', { value: c })))));
+    list.append(el('div', { class: 'td-add' }, el('span', { class: 'td-plus', 'aria-hidden': 'true' }, '+'), input, ctx));
 
     /* close-out card */
     const openTasks = tasks.filter(t => t.status === 'open');

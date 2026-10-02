@@ -30,6 +30,7 @@ features can be added without editing the core file. If `window.DS` is missing, 
 | File | Role |
 | --- | --- |
 | `app.js` | Core app. Supabase client, auth and 2FA, data access, routing, helpers, all exported on `window.DS`. |
+| `projects.js` | Projects tab: companies (and Personal) with projects inside them, progress from this month's outcomes, a page per project, the project picker used by Today / Week / Month, coloured project chips and a project filter. Loaded straight after `app.js`. |
 | `outcomes.js` | Month tab: outcome cards, plus the shared side panel (`DS.openItem`) used by the Week and Today tabs. |
 | `week.js` | Week tab: priority cards, day tiles, week in numbers and the week review. |
 | `today.js` | Today tab: task strips, the close-out card and side tiles. |
@@ -46,8 +47,8 @@ features can be added without editing the core file. If `window.DS` is missing, 
 ### CSS
 
 `styles.css` is the base stylesheet. Each of the others styles the matching feature: `outcomes.css`, `panel.css`
-(side panel), `week.css`, `today.css`, `reports.css`, `home.css`, `account.css`, `header.css`, `intro.css`, `brand.css` and
-`display.css`. `mobile.css` holds the phone-layout overrides.
+(side panel), `week.css`, `today.css`, `reports.css`, `home.css`, `account.css`, `header.css`, `intro.css`, `brand.css`,
+`display.css` and `projects.css`. `mobile.css` holds the phone-layout overrides.
 
 ### Other files
 
@@ -60,7 +61,8 @@ features can be added without editing the core file. If `window.DS` is missing, 
 | `hero-storm.webp` | Hero image used by the side panel (`panel.css`). |
 | `vercel.json` | Vercel headers (see above). |
 | `supabase/functions/reminders/index.ts` | Source of the `reminders` Edge Function. |
-| `supabase/schema.sql` | The database's public schema: tables, RLS policies, functions, the sign-up trigger and the cron job. |
+| `supabase/schema.sql` | The database's public schema as first imported: tables, RLS policies, functions, the sign-up trigger and the cron job. |
+| `supabase/migrations/` | Database changes made since, applied in date order on top of `schema.sql` (each with an `_undo` script). |
 
 ## Data and backend: Supabase
 
