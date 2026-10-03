@@ -28,7 +28,7 @@
 
     /* task strips */
     const list = el('div', { class: 'td-list' });
-    // Starred (top 3) tasks sit at the top; otherwise the usual order is kept.
+    // Starred (top 5) tasks sit at the top; otherwise the usual order is kept.
     tasks.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
     tasks.forEach(t => {
       const parent = t.parent_id && weekTitle[t.parent_id];
@@ -44,7 +44,7 @@
         notes ? el('span', { class: 'td-chip', title: 'Updates' }, `\u270e ${notes}`) : null,
         links ? el('span', { class: 'td-chip', title: 'Links' }, `\ud83d\udd17 ${links}`) : null
       ].filter(Boolean);
-      list.append(el('article', { class: `td-row s-${t.status}`, 'data-oid': t.id, 'data-pid': t.project_id || '',
+      list.append(el('article', { class: `td-row s-${t.status}`, 'data-oid': t.id, 'data-pid': t.project_id || '', 'data-pos': String(t.position ?? ''),
         onclick: e => { if (!e.target.closest('button,a,input')) DS.openItem(t.id); } },
         el('button', { class: 'ocheck', disabled: t.status === 'carried',
           'aria-label': t.status === 'done' ? `Mark "${t.title}" not done` : `Mark "${t.title}" done`,

@@ -1,11 +1,12 @@
 // Home tab: the page the sheet opens on.
-// A quote hero that changes at 6am and 6pm, today at a glance, top 3, week and month progress,
+// A quote hero that changes at 6am and 6pm, today at a glance, top 5, week and month progress,
 // things that need attention, close-out streak, last note, wins from a month ago and quick capture.
 // Morning (6am-6pm) leads with planning; evening (6pm-6am) leads with closing out the day.
-// Also adds: the Home nav button, a star on Today's task rows for the top 3, and a Home section in Settings.
+// Also adds: the Home nav button, a star on Today's task rows for the top 5 (starred rows glide to the top), and a Home section in Settings.
 (function () {
   'use strict';
   const DS = window.DS;
+  const TOP = 5; // how many tasks can be starred as the day's top tasks
   if (!DS) return;
   const { sb, q, el, state, uid, toast, refresh, setTask, fetchTasks, parse, today, addDays,
     weekStart, monthStart, addMonths, fmt, dayName, shortDay, monthName } = DS;
@@ -209,12 +210,12 @@
     const shape = el('div', { class: 'hm-shape' }, el('p', {}, shapeLine), el('p', { class: 'hm-sub' }, countdown, reportNote && mode === 'morning' ? ' ' + reportNote : ''),
       el('button', { class: 'btn primary', onclick: () => DS.go('today', d) }, d === now ? 'Open today’s sheet' : `Open ${weekday(d)}’s sheet`));
 
-    /* ---- top 3 ---- */
-    const pinned = live.filter(t => t.pinned).slice(0, 3);
+    /* ---- top 5 ---- */
+    const pinned = live.filter(t => t.pinned).slice(0, TOP);
     const candidates = live.filter(t => !t.pinned && t.status === 'open');
     const pinnedDone = pinned.filter(t => t.status === 'done').length;
     const setPin = async (t, on) => {
-      if (on && pinned.length >= 3) return toast('Your top 3 is full. Unstar one first.');
+      if (on && pinned.length >= TOP) return toast(`Your top ${TOP} is full. Unstar one first.`);
       await setTask(t.id, { pinned: on }); refresh();
     };
     const toggleDone = async t => {
@@ -227,14 +228,14 @@
         t.status === 'done' ? '✓' : t.status === 'dropped' ? '–' : ''),
       el('button', { class: 'hm-top-t', title: 'Open on Today', onclick: () => openTask(t) }, t.title),
       t.status === 'open' ? el('button', { class: 'hm-ic', title: 'Start a focus block on this', 'aria-label': `Start a focus block on "${t.title}"`, onclick: () => DS.startFocus(t) }, '⏱') : null,
-      el('button', { class: 'hm-ic star', title: 'Remove from top 3', 'aria-label': `Remove "${t.title}" from top 3`, onclick: () => setPin(t, false) }, '★')))) : null;
-    const picker = pinned.length < 3 && candidates.length ? el('div', { class: 'hm-pick' },
-      el('p', {}, pinned.length ? `Pick ${3 - pinned.length} more from today’s list:` : 'Star the three that matter most today:'),
-      el('div', { class: 'hm-chips' }, candidates.slice(0, 10).map(t => el('button', { class: 'hm-chip', onclick: () => setPin(t, true), 'aria-label': `Add "${t.title}" to top 3` },
+      el('button', { class: 'hm-ic star', title: `Remove from top ${TOP}`, 'aria-label': `Remove "${t.title}" from top ${TOP}`, onclick: () => setPin(t, false) }, '★')))) : null;
+    const picker = pinned.length < TOP && candidates.length ? el('div', { class: 'hm-pick' },
+      el('p', {}, pinned.length ? `Pick up to ${TOP - pinned.length} more from today’s list:` : `Star the ${TOP} that matter most today:`),
+      el('div', { class: 'hm-chips' }, candidates.slice(0, 10).map(t => el('button', { class: 'hm-chip', onclick: () => setPin(t, true), 'aria-label': `Add "${t.title}" to top ${TOP}` },
         '☆ ', t.title, t.carried_from ? el('small', {}, ' carried') : null)))) : null;
-    const top3 = tile('hm-top', mode === 'evening' && pinned.length ? `Top 3: ${pinnedDone} of ${pinned.length} done` : 'Top 3 today', null,
+    const top3 = tile('hm-top', mode === 'evening' && pinned.length ? `Top ${TOP}: ${pinnedDone} of ${pinned.length} done` : `Top ${TOP} today`, null,
       topList, picker,
-      !live.length ? el('p', { class: 'td-none' }, 'Nothing on today’s sheet yet. Add a few tasks, then star the three that matter most.') : null,
+      !live.length ? el('p', { class: 'td-none' }, `Nothing on today’s sheet yet. Add a few tasks, then star the ${TOP} that matter most.`) : null,
       live.length && !pinned.length && !candidates.length ? el('p', { class: 'td-none' }, 'Everything on today’s sheet is done.') : null,
       el('div', { class: 'hm-foc' },
         el('button', { class: 'hm-btn main', onclick: () => DS.startFocus(firstOpen || null) },
@@ -424,6 +425,29 @@
     }
   }
 
+  // Re-sort Today's rows in place (starred first, then the usual order) and let each row glide to its new spot.
+  const calm = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function glide(moved) {
+    const list = moved.parentNode; if (!list) return;
+    const rows = [...list.querySelectorAll(':scope > .td-row')];
+    const before = new Map(rows.map(r => [r, r.getBoundingClientRect().top]));
+    const starred = r => (r.querySelector('.hm-star.on') ? 1 : 0), pos = r => parseFloat(r.dataset.pos) || 0;
+    const sorted = rows.slice().sort((a, b) => starred(b) - starred(a) || pos(a) - pos(b) || rows.indexOf(a) - rows.indexOf(b));
+    const after = rows[rows.length - 1].nextSibling;
+    sorted.forEach(r => list.insertBefore(r, after));
+    if (calm || !moved.animate) return;
+    // screen distances include the page zoom; transforms are in unzoomed pixels
+    const z = moved.offsetHeight ? moved.getBoundingClientRect().height / moved.offsetHeight : 1;
+    sorted.forEach(r => {
+      const dy = (before.get(r) - r.getBoundingClientRect().top) / (z || 1);
+      if (Math.abs(dy) < 1) return;
+      const self = r === moved;
+      r.animate([{ transform: `translateY(${dy}px)${self ? ' scale(1.02)' : ''}` }, { transform: self ? 'scale(1.02)' : 'none', offset: self ? .85 : 1 }, { transform: 'none' }],
+        { duration: self ? 700 : 480, easing: 'cubic-bezier(.2,.7,.2,1)' });
+    });
+    moved.classList.add('td-lift'); setTimeout(() => moved.classList.remove('td-lift'), 900);
+  }
+
   let starSeq = 0;
   async function injectStars(main) {
     const rows = [...main.querySelectorAll('.td-row[data-oid]:not([data-star])')];
@@ -438,17 +462,17 @@
       const t = byId[r.dataset.oid];
       if (!t || t.status === 'carried' || !r.isConnected) continue;
       const b = el('button', { class: 'hm-star' + (t.pinned ? ' on' : ''), 'aria-pressed': String(!!t.pinned),
-        'aria-label': 'Top 3', title: t.pinned ? 'In your top 3. Click to remove.' : 'Add to your top 3',
+        'aria-label': `Top ${TOP}`, title: t.pinned ? `In your top ${TOP}. Click to remove.` : `Add to your top ${TOP}`,
         onclick: async e => {
           e.stopPropagation();
           const on = !t.pinned;
-          if (on && data.filter(x => x.pinned && x.status !== 'carried').length >= 3) return toast('Your top 3 is full. Unstar one first.');
-          await setTask(t.id, { pinned: on });
-          t.pinned = on;
+          if (on && data.filter(x => x.pinned && x.status !== 'carried').length >= TOP) return toast(`Your top ${TOP} is full. Unstar one first.`);
+          t.pinned = on; // update at once so the row can glide straight away; undo if saving fails
           b.classList.toggle('on', on); b.textContent = on ? '★' : '☆'; b.setAttribute('aria-pressed', String(on));
-          b.title = on ? 'In your top 3. Click to remove.' : 'Add to your top 3';
-          toast(on ? 'Added to your top 3.' : 'Removed from your top 3.');
-          refresh(); // re-sort Today so starred tasks move to the top
+          b.title = on ? `In your top ${TOP}. Click to remove.` : `Add to your top ${TOP}`;
+          glide(r);
+          try { await setTask(t.id, { pinned: on }); toast(on ? `Added to your top ${TOP}.` : `Removed from your top ${TOP}.`); }
+          catch (err) { t.pinned = !on; b.classList.toggle('on', !on); b.textContent = !on ? '★' : '☆'; b.setAttribute('aria-pressed', String(!on)); glide(r); }
         } }, t.pinned ? '★' : '☆');
       r.append(b);
     }

@@ -66,3 +66,4 @@
 .td-notes:focus{outline:none;background-image:repeating-linear-gradient(to bottom,transparent 0 31px,rgba(110,231,183,.38) 31px 32px)}
 .td-notes:focus-visible{outline:none}
 .td-pad:focus-within::before{background:#6ee7b7}
+.td-row.td-lift{z-index:2;box-shadow:0 0 0 2px rgba(251,191,36,.65),0 22px 44px rgba(8,5,30,.35);transition:box-shadow .3s}
