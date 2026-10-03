@@ -1,5 +1,6 @@
 // Light mode ("Paper"). Dark is the default; the sun / moon button on the Home profile strip switches.
-// Also the app refresh (reload with the latest version): click the logo / "Hamid OS" in the header, or press Cmd+R / Ctrl+R.
+// Also the app refresh (reload with the latest version): click the logo / "Hamid OS" in the header, or press Cmd+R / Ctrl+R,
+// and Cmd+Left / Cmd+Right to move between tabs.
 // The choice is kept per device. Loaded in <head> so the page never flashes the wrong theme.
 (function () {
   'use strict';
@@ -49,6 +50,20 @@
   // Cmd+R (Mac) / Ctrl+R: the full app refresh instead of a plain reload. Shift+Cmd+R is left to the browser.
   document.addEventListener('keydown', function (e) {
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === 'r' || e.key === 'R')) { e.preventDefault(); refresh(); }
+  }, true);
+  // Cmd+Left / Cmd+Right (Ctrl on Windows): the previous / next tab in the menu, wrapping round at the ends.
+  // Left alone while typing (there it moves the cursor to the start / end of the line) or with a dialog open.
+  document.addEventListener('keydown', function (e) {
+    if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
+    var t = e.target;
+    if (t && t.closest && t.closest('input,textarea,select,[contenteditable=""],[contenteditable="true"]')) return;
+    if (document.querySelector('dialog[open]')) return;
+    var tabs = Array.prototype.slice.call(document.querySelectorAll('#app nav.nav > button'));
+    if (tabs.length < 2) return;
+    var i = tabs.findIndex(function (b) { return b.getAttribute('aria-current') === 'page'; });
+    var n = tabs.length, next = i < 0 ? 0 : (i + (e.key === 'ArrowRight' ? 1 : -1) + n) % n;
+    e.preventDefault();
+    tabs[next].click();
   }, true);
   // The logo and "Hamid OS" in the header refresh the app.
   document.addEventListener('click', function (e) {
