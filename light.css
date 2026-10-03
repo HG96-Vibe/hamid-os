@@ -11,9 +11,11 @@ html.light{
   --amber:#b45309;
   color-scheme:light;
 }
-/* the area above / around the page (phone status bar, pull-down) takes the theme colour, never white */
+/* the area above / around the page (phone status bar, pull-down) takes the theme colour, never white.
+   The colour sits on html only: body stays see-through, or it would paint over the Chip background behind it. */
 html{background-color:#1e1b4b}
-html.light,html.light body,html.light canvas.signal-bg{background-color:#f6f4ef}
+body{background-color:transparent}
+html.light,html.light canvas.signal-bg{background-color:#f6f4ef}
 
 /* blocks that stay dark: give them back the dark tokens */
 html.light .mr-box,html.light .op-hero,html.light .toast,html.light .timerbar{
