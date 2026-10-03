@@ -337,5 +337,6 @@
   DS.views.month = viewMonth;
   DS.openOutcome = openPanel;
   DS.openItem = openPanel;
+  DS.closeItem = closePanel;
   if (state.user && state.view === 'month') refresh();
 })();

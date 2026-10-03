@@ -31,7 +31,7 @@ features can be added without editing the core file. If `window.DS` is missing, 
 | --- | --- |
 | `app.js` | Core app. Supabase client, auth and 2FA, data access, routing, helpers, all exported on `window.DS`. |
 | `projects.js` | Projects tab: companies (and Personal) with projects inside them, progress from this month's outcomes, a page per project, the project picker used by Today / Week / Month, coloured project chips and a project filter. Loaded straight after `app.js`. |
-| `create.js` | Create tab: Word-style documents in folders (two levels), templates, an A4 page editor with fonts, sizes, colours, highlight, alignment, line spacing, lists, checklists, tables, links, page breaks and page setup, autosave (with a copy kept on the device until the save lands), focus mode, a 30-day Trash, and downloads as Word (.docx) or PDF (the browser's print, on the document's page size). Loads the editor bundle only when the tab opens. |
+| `create.js` | Create tab: Word-style documents in folders (two levels), templates, an A4 page editor with fonts, sizes, colours, highlight, alignment, line spacing, lists, checklists, tables, links, page breaks and page setup, autosave (with a copy kept on the device until the save lands), focus mode, a 30-day Trash, and downloads as Word (.docx) or PDF (the browser's print, on the document's page size). Also: images (stored privately, see below), version history (every 10 minutes while writing, on leaving a document, and named versions; preview and restore), links to tasks (`#doc=<id>` links in the task's links that open the document here) and a Documents section on each project's page. Loads the editor bundle only when the tab opens. |
 | `create-editor.js`, `create-docx.js` | Bundled, minified third-party code for the Create tab: the TipTap editor (MIT) and the docx Word writer (MIT). Built from `tools/create-bundle` (see below); don't edit by hand. |
 | `outcomes.js` | Month tab: outcome cards, plus the shared side panel (`DS.openItem`) used by the Week and Today tabs. |
 | `week.js` | Week tab: priority cards, day tiles, week in numbers and the week review. |
@@ -81,7 +81,13 @@ see nothing. A trigger on `auth.users` (`ds_only_one_user`) closes sign-ups afte
 
 Documents from the Create tab live in `documents` (the writing as editor JSON, plus HTML and plain text for search
 and previews, the page set-up, folder and project), filed in `doc_folders` (two levels). Both have the same
-`owner_with_2fa` policy.
+`owner_with_2fa` policy. `document_versions` keeps each document's history: named versions for as long as the
+document exists, automatic ones for 90 days and then one a day (a trigger thins them).
+
+Images in documents are stored in the private Storage bucket `doc-images`, under `<user id>/<document id>/`. A policy on
+`storage.objects` lets only their owner, signed in with 2FA, read or write them; the app shows them through signed
+links that last six hours. They are deleted when their document is deleted for good. The JSON backup includes
+documents, folders and versions, but not the image files themselves.
 
 Two database functions do the heavy lifting:
 

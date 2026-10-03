@@ -10,6 +10,7 @@ import Superscript from '@tiptap/extension-superscript';
 import { TableKit } from '@tiptap/extension-table';
 import { TaskList, TaskItem } from '@tiptap/extension-list';
 import { Placeholder, CharacterCount } from '@tiptap/extensions';
+import Image from '@tiptap/extension-image';
 
 // A manual page break: a dashed line on screen, a new page in Word and in the PDF.
 const PageBreak = Node.create({
@@ -59,7 +60,22 @@ const ParaFormat = Extension.create({
   }
 });
 
-function make(element, content, { onUpdate, onSelection, placeholder } = {}) {
+// Images live in private storage: the node keeps the storage path, and src holds a short-lived signed link
+// that the app refreshes whenever a document opens. Width is a share of the line; align is left, center or right.
+const DocImage = Image.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      path: { default: null, parseHTML: e => e.getAttribute('data-path'), renderHTML: a => (a.path ? { 'data-path': a.path } : {}) },
+      width: { default: '100%', parseHTML: e => e.style.width || e.getAttribute('data-width') || '100%', renderHTML: a => ({ 'data-width': a.width, style: `width:${a.width}` }) },
+      align: { default: 'center', parseHTML: e => e.getAttribute('data-align') || 'center', renderHTML: a => ({ 'data-align': a.align }) }
+    };
+  }
+}).configure({ inline: false, allowBase64: false, HTMLAttributes: { class: 'cr-img' } });
+
+const imagesIn = list => [...(list || [])].filter(f => /^image\//.test(f.type));
+
+function make(element, content, { onUpdate, onSelection, placeholder, onFiles } = {}) {
   return new Editor({
     element,
     content,
@@ -74,8 +90,17 @@ function make(element, content, { onUpdate, onSelection, placeholder } = {}) {
       TaskList, TaskItem.configure({ nested: true }),
       Placeholder.configure({ placeholder: placeholder || 'Start writing…' }),
       CharacterCount,
-      PageBreak, ParaFormat
+      PageBreak, ParaFormat, DocImage
     ],
+    editorProps: {
+      handlePaste: (view, event) => { const f = imagesIn(event.clipboardData && event.clipboardData.files); if (!f.length || !onFiles) return false; onFiles(f, null); return true; },
+      handleDrop: (view, event, slice, moved) => {
+        if (moved) return false;
+        const f = imagesIn(event.dataTransfer && event.dataTransfer.files); if (!f.length || !onFiles) return false;
+        const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
+        event.preventDefault(); onFiles(f, at ? at.pos : null); return true;
+      }
+    },
     onUpdate: ({ editor }) => onUpdate && onUpdate(editor),
     onSelectionUpdate: ({ editor }) => onSelection && onSelection(editor),
     onTransaction: ({ editor }) => onSelection && onSelection(editor)

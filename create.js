@@ -21,6 +21,7 @@
   const MARKS = ['#fef08a', '#bbf7d0', '#a5f3fc', '#bfdbfe', '#e9d5ff', '#fbcfe8', '#fed7aa', '#e5e7eb'];
   const TRASH_DAYS = 30;
   const LIST_COLS = 'id,title,folder_id,project_id,pinned,word_count,plain,page,created_at,updated_at,deleted_at';
+  const BUCKET = 'doc-images', SIGN_SECS = 6 * 3600, VERSION_EVERY = 10 * 60e3;
 
   /* ---------- icons ---------- */
   const PATHS = {
@@ -49,7 +50,9 @@
     clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
     docs: '<path d="M7 3h8l4 4v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M9 12h6M9 16h6"/>',
     inbox: '<path d="M3 13h5l1.5 3h5L16 13h5"/><path d="M5 5h14l2 8v6H3v-6z"/>',
-    plus: '<path d="M12 5v14M5 12h14"/>'
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="m4 18 5-5 4 4 3-3 4 4"/>',
+    history: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7.5V12l3 2"/>'
   };
   function icon(name, size = 18) {
     const s = document.createElement('span');
@@ -101,6 +104,94 @@
     document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   }
+  /* ---------- images: private storage, shown through signed links that last a few hours ---------- */
+  const imgStore = () => sb.storage.from(BUCKET);
+  function imagePaths(n, out = []) {
+    if (!n || typeof n !== 'object') return out;
+    if (n.type === 'image' && n.attrs && n.attrs.path) out.push(n.attrs.path);
+    (n.content || []).forEach(c => imagePaths(c, out));
+    return out;
+  }
+  async function signPaths(paths) {
+    const uniq = [...new Set(paths)], m = {};
+    if (!uniq.length) return m;
+    try { const { data } = await imgStore().createSignedUrls(uniq, SIGN_SECS); (data || []).forEach(d => { if (d.signedUrl && d.path) m[d.path] = d.signedUrl; }); } catch (e) {}
+    return m;
+  }
+  // Give every image in a document (editor JSON) a fresh link before it is shown.
+  async function signContent(json) {
+    if (!json || typeof json !== 'object') return json;
+    const m = await signPaths(imagePaths(json));
+    const walk = n => { if (n.type === 'image' && n.attrs && m[n.attrs.path]) n.attrs = { ...n.attrs, src: m[n.attrs.path] }; (n.content || []).forEach(walk); };
+    walk(json);
+    return json;
+  }
+  // The same for rendered HTML (PDF, version previews); waits until the images have loaded.
+  async function signDom(root) {
+    const imgs = [...root.querySelectorAll('img[data-path]')];
+    const m = await signPaths(imgs.map(i => i.getAttribute('data-path')));
+    imgs.forEach(i => { const u = m[i.getAttribute('data-path')]; if (u) i.src = u; });
+    await Promise.all(imgs.map(i => (i.decode ? i.decode().catch(() => {}) : null)));
+  }
+  // Big photos are scaled down to 2000px; WebP and other types become JPEG or PNG so Word can open them.
+  async function prepImage(file) {
+    if (file.type === 'image/gif' && file.size <= 8e6) return { blob: file, ext: 'gif', type: 'image/gif' };
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, 2000 / Math.max(bmp.width, bmp.height));
+    if ((file.type === 'image/png' || file.type === 'image/jpeg') && scale === 1 && file.size <= 4e6) return { blob: file, ext: file.type === 'image/png' ? 'png' : 'jpg', type: file.type };
+    const cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(bmp.width * scale)); cv.height = Math.max(1, Math.round(bmp.height * scale));
+    const x = cv.getContext('2d'), png = file.type === 'image/png';
+    if (!png) { x.fillStyle = '#fff'; x.fillRect(0, 0, cv.width, cv.height); }
+    x.drawImage(bmp, 0, 0, cv.width, cv.height);
+    const type = png ? 'image/png' : 'image/jpeg';
+    const blob = await new Promise(r => cv.toBlob(r, type, 0.88));
+    return { blob, ext: png ? 'png' : 'jpg', type };
+  }
+  async function insertImages(E, files, pos) {
+    for (const f of files) {
+      if (f.size > 25e6) { toast('That image is over 25 MB. Try a smaller one.'); continue; }
+      toast('Adding image…');
+      try {
+        const { blob, ext, type } = await prepImage(f);
+        const path = `${DS.uid()}/${E.doc.id}/${crypto.randomUUID()}.${ext}`;
+        const { error } = await imgStore().upload(path, blob, { contentType: type, upsert: false });
+        if (error) throw error;
+        const m = await signPaths([path]);
+        if (!E.editor) return;
+        const node = { type: 'image', attrs: { src: m[path] || '', path, alt: (f.name || '').replace(/\.[^.]+$/, '').slice(0, 120) || null, width: '100%', align: 'center' } };
+        const ch = E.editor.chain().focus();
+        (pos != null ? ch.insertContentAt(pos, node) : ch.insertContent(node)).run();
+        toast('Image added.');
+      } catch (e) { toast('Couldn’t add the image. ' + (e && e.message ? e.message : 'Try again.')); }
+    }
+  }
+  // Remove a document's image files (when it is deleted for good).
+  async function removeImages(docId) {
+    try {
+      const pre = `${DS.uid()}/${docId}`;
+      const { data } = await imgStore().list(pre, { limit: 1000 });
+      if (data && data.length) await imgStore().remove(data.map(f => `${pre}/${f.name}`));
+    } catch (e) {}
+  }
+
+  /* ---------- version history ---------- */
+  const VCOLS = 'id,kind,name,title,word_count,created_at';
+  async function snapshot(E, kind, name) {
+    if (!E.editor) return null;
+    const ed = E.editor;
+    const v = await q(sb.from('document_versions').insert({ user_id: DS.uid(), document_id: E.doc.id, kind, name: name ? name.slice(0, 120) : null,
+      title: E.doc.title, content: ed.getJSON(), html: ed.getHTML(), word_count: ed.storage.characterCount.words() }).select(VCOLS).single());
+    E.lastVersionAt = Date.now();
+    if (kind !== 'restore') E.changedSinceVersion = false;
+    if (E.onVersion) E.onVersion();
+    return v;
+  }
+  const vLabel = v => v.name || (v.kind === 'restore' ? 'Before a restore' : v.kind === 'named' ? 'Saved version' : 'Automatic');
+  const vTime = v => new Date(v.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  const vDay = v => { const d = new Date(v.created_at), n = new Date(), y = new Date(Date.now() - 864e5);
+    return d.toDateString() === n.toDateString() ? 'Today' : d.toDateString() === y.toDateString() ? 'Yesterday' : d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: d.getFullYear() === n.getFullYear() ? undefined : 'numeric' }); };
+
   const fileName = t => (t || 'Untitled').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) || 'Untitled';
 
   /* ---------- data ---------- */
@@ -111,8 +202,13 @@
     C.folders = folders; C.docs = docs; C.loaded = true;
     // Empty the Trash of anything older than 30 days.
     const cutoff = new Date(Date.now() - TRASH_DAYS * 864e5).toISOString();
-    if (docs.some(d => d.deleted_at && d.deleted_at < cutoff)) {
-      sb.from('documents').delete().lt('deleted_at', cutoff).then(({ error }) => { if (!error) C.docs = C.docs.filter(d => !(d.deleted_at && d.deleted_at < cutoff)); });
+    const old = docs.filter(d => d.deleted_at && d.deleted_at < cutoff);
+    if (old.length) {
+      sb.from('documents').delete().lt('deleted_at', cutoff).then(({ error }) => {
+        if (error) return;
+        C.docs = C.docs.filter(d => !old.includes(d));
+        old.forEach(d => removeImages(d.id));
+      });
     }
   }
   const ensure = () => (C.loaded ? Promise.resolve() : (C.loading = C.loading || load().finally(() => { C.loading = null; })));
@@ -137,16 +233,28 @@
 
   /* ---------- creating, moving and deleting ---------- */
   const curFolder = () => (C.sel && folderById(C.sel) ? C.sel : null);
-  async function createDoc(tpl, folderId) {
-    const row = { user_id: DS.uid(), title: tpl.title === 'Untitled' ? 'Untitled' : tpl.title, folder_id: folderId || null, html: tpl.html(), page: { size: 'A4', margins: 'normal', orient: 'portrait' } };
+  async function createDoc(tpl, folderId, projectId) {
+    const row = { user_id: DS.uid(), title: tpl.title === 'Untitled' ? 'Untitled' : tpl.title, folder_id: folderId || null, project_id: projectId || null,
+      html: tpl.html(), page: { size: 'A4', margins: 'normal', orient: 'portrait' } };
     const d = await q(sb.from('documents').insert(row).select(LIST_COLS).single());
     C.docs.unshift(d);
     openDoc(d.id, { fresh: true });
   }
   async function duplicate(d) {
     const full = await q(sb.from('documents').select('*').eq('id', d.id).single());
-    const copy = await q(sb.from('documents').insert({ user_id: DS.uid(), title: ('Copy of ' + full.title).slice(0, 200), folder_id: full.folder_id, project_id: full.project_id,
+    let copy = await q(sb.from('documents').insert({ user_id: DS.uid(), title: ('Copy of ' + full.title).slice(0, 200), folder_id: full.folder_id, project_id: full.project_id,
       content: full.content, html: full.html, plain: full.plain, word_count: full.word_count, page: full.page }).select(LIST_COLS).single());
+    // the copy gets its own copies of the images, so deleting one document never breaks the other
+    const paths = [...new Set(imagePaths(full.content))];
+    if (paths.length) {
+      let json = JSON.stringify(full.content), html = full.html || '';
+      for (const from of paths) {
+        const to = `${DS.uid()}/${copy.id}/${from.split('/').pop()}`;
+        const { error } = await imgStore().copy(from, to);
+        if (!error) { json = json.split(from).join(to); html = html.split(from).join(to); }
+      }
+      await q(sb.from('documents').update({ content: JSON.parse(json), html }).eq('id', copy.id));
+    }
     C.docs.unshift(copy);
     toast('Copied.');
     return copy;
@@ -159,12 +267,13 @@
     await patchDoc(d, { deleted_at: new Date().toISOString() });
     toast(`Moved to Trash. It stays there for ${TRASH_DAYS} days.`);
   }
-  function templateDialog(folderId) {
+  function templateDialog(folderId, projectId) {
     const dlg = el('dialog', { class: 'cr-dlg cr-tpl-dlg', 'aria-label': 'New document' });
-    const pick = async t => { dlg.close(); try { await createDoc(t, folderId); } catch (e) { /* q() already said why */ } };
+    const pick = async t => { dlg.close(); try { await createDoc(t, folderId, projectId); } catch (e) { /* q() already said why */ } };
     dlg.append(el('div', { class: 'dlg' },
       el('h2', {}, 'New document'),
       folderId ? el('p', { class: 'meta', style: 'margin:-8px 0 0' }, 'In ' + folderPath(folderId)) : null,
+      projectId && DS.proj ? el('p', { class: 'meta', style: 'margin:-8px 0 0' }, 'For ' + DS.proj.label(projectId)) : null,
       el('div', { class: 'cr-tpls' }, TEMPLATES.map(t => el('button', { class: 'cr-tpl', type: 'button', onclick: () => pick(t) },
         el('span', { class: 'cr-tpl-page', 'data-t': t.id, 'aria-hidden': 'true' }, el('i'), el('i'), el('i'), el('i')),
         el('b', {}, t.name), el('small', {}, t.blurb)))),
@@ -237,13 +346,13 @@
     const days = trash ? Math.max(0, TRASH_DAYS - Math.floor((Date.now() - new Date(d.deleted_at)) / 864e5)) : 0;
     const meta = [d.folder_id && C.sel !== d.folder_id ? folderPath(d.folder_id) : null, (trash ? 'Deleted ' + when(d.deleted_at) : 'Edited ' + when(d.updated_at)), plural(d.word_count || 0, 'word')].filter(Boolean);
     const pin = !trash ? el('button', { class: 'cr-ic cr-pin' + (d.pinned ? ' on' : ''), type: 'button', title: d.pinned ? 'Unpin' : 'Pin to the top', 'aria-label': d.pinned ? 'Unpin' : 'Pin', 'aria-pressed': String(!!d.pinned),
-      onclick: async e => { e.stopPropagation(); await patchDoc(d, { pinned: !d.pinned }); drawList(); } }, icon('star', 17)) : null;
+      onclick: async e => { e.stopPropagation(); await patchDoc(d, { pinned: !d.pinned }); rerender(); } }, icon('star', 17)) : null;
     const del = !trash ? el('button', { class: 'cr-ic', type: 'button', title: 'Move to Trash', 'aria-label': 'Move to Trash',
-      onclick: async e => { e.stopPropagation(); await trashDoc(d); drawList(); drawSide(); } }, icon('trash', 17)) : null;
+      onclick: async e => { e.stopPropagation(); await trashDoc(d); rerender(); } }, icon('trash', 17)) : null;
     const restore = trash ? [
       el('button', { class: 'btn cr-small', type: 'button', onclick: async e => { e.stopPropagation(); await patchDoc(d, { deleted_at: null }); if (d.folder_id && !folderById(d.folder_id)) d.folder_id = null; toast('Restored.'); drawList(); drawSide(); } }, 'Restore'),
       el('button', { class: 'btn danger cr-small', type: 'button', onclick: async e => { e.stopPropagation(); if (!confirm(`Delete "${d.title}" for good? This can’t be undone.`)) return;
-        await q(sb.from('documents').delete().eq('id', d.id)); C.docs = C.docs.filter(x => x !== d); drawList(); drawSide(); } }, 'Delete forever')] : null;
+        await q(sb.from('documents').delete().eq('id', d.id)); C.docs = C.docs.filter(x => x !== d); removeImages(d.id); drawList(); drawSide(); } }, 'Delete forever')] : null;
     return el('article', { class: 'cr-card' + (trash ? ' cr-trashed' : ''), tabindex: trash ? null : '0', role: trash ? null : 'button', 'aria-label': trash ? null : 'Open ' + (d.title || 'Untitled'),
       onclick: trash ? null : () => openDoc(d.id), onkeydown: trash ? null : e => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); openDoc(d.id); } } },
       el('div', { class: 'cr-card-top' }, el('h3', {}, d.title || 'Untitled'), el('div', { class: 'cr-card-acts' }, pin, del)),
@@ -253,6 +362,7 @@
       d.project_id && DS.proj && DS.proj.byId(d.project_id) ? DS.proj.chip({ project_id: d.project_id }, 'otag') : null);
   }
   let listBox = null, sideBox = null, headBox = null;
+  const rerender = () => { if (state.view === 'create') { drawList(); drawSide(); } else refresh(); };
   function drawList() {
     if (!listBox) return;
     const items = shown();
@@ -347,13 +457,14 @@
   }
   async function closeDoc() {
     const E = C.ed;
-    if (E) { await E.flush(); E.destroy(); }
+    if (E) { await E.leave(); E.destroy(); }
     C.ed = null; C.open = null;
     if (state.view === 'create') { refresh(); window.scrollTo(0, 0); }
   }
 
   async function editorView(id) {
-    const [_, d] = await Promise.all([loadScript('/create-editor.js?v=1'), q(sb.from('documents').select('*').eq('id', id).maybeSingle())]);
+    const [_, d, lastV] = await Promise.all([loadScript('/create-editor.js?v=2'), q(sb.from('documents').select('*').eq('id', id).maybeSingle()),
+      sb.from('document_versions').select('created_at').eq('document_id', id).order('created_at', { ascending: false }).limit(1).then(r => (r.data && r.data[0]) || null, () => null)]);
     if (!d || d.deleted_at) { C.open = null; toast('That document isn’t available any more.'); return viewCreate(); }
     const listRow = C.docs.find(x => x.id === id);
     const doc = listRow ? Object.assign(listRow, d) : d;
@@ -367,8 +478,11 @@
     if (local && local.at > new Date(doc.updated_at).getTime() && local.content) {
       content = local.content; if (local.title != null) doc.title = local.title; if (local.page) doc.page = local.page; restored = true;
     } else if (local) store(LKEY, null);
+    if (content && typeof content === 'object') content = await signContent(content);
 
-    const E = { doc, dirty: false, saving: null, timer: null, ltimer: null, failed: false };
+    // A version is taken every 10 minutes while you write, and when you leave the document.
+    const E = { doc, dirty: false, saving: null, timer: null, ltimer: null, failed: false,
+      lastVersionAt: lastV ? new Date(lastV.created_at).getTime() : Date.now(), changedSinceVersion: false };
     const status = el('span', { class: 'cr-status', role: 'status', 'aria-live': 'polite' });
     const setStatus = (t, cls) => { status.textContent = t; status.className = 'cr-status' + (cls ? ' ' + cls : ''); };
     setStatus(restored ? 'Restored unsaved changes' : 'Saved', restored ? 'warn' : 'ok');
@@ -389,10 +503,10 @@
     }
 
     // saving
-    const snapshot = () => ({ content: E.editor.getJSON(), title: doc.title, page: pageOf(doc), at: Date.now() });
-    function keepLocal() { clearTimeout(E.ltimer); E.ltimer = null; if (E.editor && E.dirty) store(LKEY, JSON.stringify(snapshot())); }
+    const localCopy = () => ({ content: E.editor.getJSON(), title: doc.title, page: pageOf(doc), at: Date.now() });
+    function keepLocal() { clearTimeout(E.ltimer); E.ltimer = null; if (E.editor && E.dirty) store(LKEY, JSON.stringify(localCopy())); }
     function changed() {
-      E.dirty = true;
+      E.dirty = true; E.changedSinceVersion = true;
       setStatus('Editing…');
       clearTimeout(E.ltimer); E.ltimer = setTimeout(keepLocal, 400);
       clearTimeout(E.timer); E.timer = setTimeout(save, 1500);
@@ -414,6 +528,7 @@
       })().then(() => {
         E.failed = false;
         if (!E.dirty) { store(LKEY, null); setStatus('Saved ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }), 'ok'); }
+        if (E.changedSinceVersion && Date.now() - E.lastVersionAt >= VERSION_EVERY) snapshot(E, 'auto').catch(() => {});
       }, err => {
         E.dirty = true; E.failed = true;
         setStatus(navigator.onLine === false ? 'Offline · kept on this device' : 'Not saved yet · kept on this device', 'warn');
@@ -423,8 +538,10 @@
       return E.saving;
     }
     E.flush = async () => { keepLocal(); try { await save(); } catch (e) {} };
+    // leaving the document: save, then keep a version if anything changed since the last one
+    E.leave = async () => { await E.flush(); if (E.changedSinceVersion && !E.failed && E.editor) { try { await snapshot(E, 'auto'); } catch (e) {} } };
     E.destroy = () => { clearTimeout(E.timer); clearTimeout(E.ltimer); document.removeEventListener('visibilitychange', onHide); window.removeEventListener('online', onOnline); E.editor && E.editor.destroy(); E.editor = null; if (focusOn()) setFocus(false); document.documentElement.classList.remove('cr-editing'); };
-    const onHide = () => { if (document.visibilityState === 'hidden') { keepLocal(); if (E.dirty) save(); } };
+    const onHide = () => { if (document.visibilityState === 'hidden') { keepLocal(); E.leave(); } };
     const onOnline = () => { if (E.dirty) save(); };
     document.addEventListener('visibilitychange', onHide);
     window.addEventListener('online', onOnline);
@@ -436,7 +553,8 @@
     E.editor = window.CrEditor.make(body, content, {
       placeholder: 'Start writing…',
       onUpdate: () => { changed(); paintCount(); },
-      onSelection: () => schedulePaint()
+      onSelection: () => schedulePaint(),
+      onFiles: (files, pos) => insertImages(E, files, pos)
     });
     const paintCount = () => { const s = E.editor.storage.characterCount; foot.querySelector('.cr-wc').textContent = `${plural(s.words(), 'word')} · ${plural(s.characters(), 'character')}`; };
     if (restored) { E.dirty = true; E.timer = setTimeout(save, 600); toast('Restored changes that hadn’t reached the server yet.'); }
@@ -445,7 +563,7 @@
     document.documentElement.classList.add('cr-editing');
 
     // toolbar
-    const tb = toolbar(E, () => applyPage(), changed);
+    const tb = toolbar(E, () => applyPage(), changed, files => insertImages(E, files, null));
     let painting = false;
     function schedulePaint() { if (painting) return; painting = true; requestAnimationFrame(() => { painting = false; if (E.editor) tb.paint(); }); }
 
@@ -455,9 +573,13 @@
     const dlBtn = menuButton(el('span', { class: 'cr-dl' }, icon('download', 17), el('span', {}, 'Download')), 'btn primary cr-dlb', [
       ['Word document (.docx)', () => exportWord(E)],
       ['PDF', () => exportPdf(E)]]);
+    const histBtn = el('button', { class: 'cr-ic', type: 'button', title: 'Version history', 'aria-label': 'Version history', onclick: () => historyPanel(E, title, changed) }, icon('history', 18));
+    const tasksBox = el('span', { class: 'cr-meta-f cr-links' });
     const moreBtn = menuButton(icon('more', 18), 'cr-ic', [
       ['Page setup…', () => pageSetup(E, applyPage, changed)],
-      ['Duplicate', async () => { await E.flush(); const c = await duplicate(doc); await closeDoc(); openDoc(c.id); }],
+      ['Version history…', () => historyPanel(E, title, changed)],
+      ['Link to a task…', () => linkTask(doc, () => drawTaskLinks(doc, tasksBox))],
+      ['Duplicate', async () => { await E.leave(); const c = await duplicate(doc); await closeDoc(); openDoc(c.id); }],
       ['Move to Trash', async () => { if (!confirm(`Move "${doc.title}" to the Trash? You can restore it for ${TRASH_DAYS} days.`)) return; await E.flush(); await trashDoc(doc); closeDoc(); }]], 'More');
     const focusBtn = el('button', { class: 'cr-ic', type: 'button', title: 'Focus mode (Esc to leave)', 'aria-label': 'Focus mode', onclick: () => setFocus(!focusOn()) }, icon('focus', 18));
 
@@ -465,10 +587,12 @@
       el('label', { class: 'cr-meta-f' }, icon('folder', 15), folderSelect(doc.folder_id, async v => { await patchDoc(doc, { folder_id: v }); toast(v ? 'Moved to ' + folderPath(v) + '.' : 'Moved out of its folder.'); })),
       DS.proj ? el('label', { class: 'cr-meta-f' }, el('span', { class: 'cr-meta-l' }, 'Project'),
         DS.proj.picker({ value: doc.project_id || '', className: 'cr-fsel', ariaLabel: 'Project', noneLabel: 'No project', onChange: async v => { await patchDoc(doc, { project_id: v }); } })) : null,
+      tasksBox,
       status);
+    drawTaskLinks(doc, tasksBox);
 
     const root = el('div', { class: 'cr-ed' },
-      el('div', { class: 'cr-top' }, back, title, el('div', { class: 'cr-top-acts' }, pinBtn, focusBtn, moreBtn, dlBtn)),
+      el('div', { class: 'cr-top' }, back, title, el('div', { class: 'cr-top-acts' }, pinBtn, histBtn, focusBtn, moreBtn, dlBtn)),
       metaRow,
       tb.node,
       el('div', { class: 'cr-desk' }, pageEl),
@@ -493,7 +617,7 @@
   document.addEventListener('click', e => { if (!e.target.closest('.cr-menu, .cr-pop')) closePops(); });
 
   /* ---------- toolbar ---------- */
-  function toolbar(E, onPage, changed) {
+  function toolbar(E, onPage, changed, onImages) {
     const ed = () => E.editor;
     const run = fn => () => { fn(ed().chain().focus()).run(); };
     const btn = (ic, label, fn, active) => {
@@ -580,6 +704,11 @@
     const tbtn = btn('table', 'Insert table', e => { e.stopPropagation(); const on = tpop.hidden; closePops(tpop); tpop.hidden = !on; });
     const table = el('span', { class: 'cr-mwrap' }, tbtn, tpop);
 
+    // images: pick files (or paste / drop them straight onto the page)
+    const picker = el('input', { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp,image/heic,image/heif', multiple: true, hidden: true,
+      onchange: () => { const f = [...picker.files]; picker.value = ''; if (f.length) onImages(f); } });
+    const image = el('span', { class: 'cr-mwrap' }, btn('image', 'Insert image (or paste / drop one)', () => picker.click()), picker);
+
     const node = el('div', { class: 'cr-tb', role: 'toolbar', 'aria-label': 'Formatting' },
       grp(btn('undo', 'Undo (Ctrl+Z)', run(c => c.undo())), btn('redo', 'Redo (Ctrl+Y)', run(c => c.redo()))),
       grp(style),
@@ -599,7 +728,7 @@
         btn('check', 'Checklist', run(c => c.toggleTaskList()), () => ed().isActive('taskList')),
         btn('outdent', 'Decrease indent (Shift+Tab)', run(c => c.indent(-1))),
         btn('indent', 'Increase indent (Tab)', run(c => c.indent(1)))),
-      grp(link, table,
+      grp(link, image, table,
         btn('quote', 'Quote', run(c => c.toggleBlockquote()), () => ed().isActive('blockquote')),
         btn('hr', 'Divider line', run(c => c.setHorizontalRule())),
         btn('pagebreak', 'Page break (Ctrl+Enter)', run(c => c.setPageBreak()))),
@@ -614,8 +743,148 @@
         .map(([l, fn]) => el('button', { type: 'button', class: 'cr-tbar-b' + (/^Delete/.test(l) ? ' danger' : ''), onmousedown: e => e.preventDefault(), onclick: run(fn) }, l)));
     paints.push(() => { tbar.hidden = !ed().isActive('table'); });
 
-    const wrap = el('div', { class: 'cr-tbw' }, node, tbar);
+    // extra bar while an image is selected
+    const setImg = a => ed().chain().focus().updateAttributes('image', a).run();
+    const ibtn = (l, fn, on) => { const b = el('button', { type: 'button', class: 'cr-tbar-b', onmousedown: e => e.preventDefault(), onclick: fn }, l);
+      if (on) paints.push(() => { if (ed().isActive('image')) b.classList.toggle('on', on()); }); return b; };
+    const ia = () => ed().getAttributes('image');
+    const ibar = el('div', { class: 'cr-tbar', hidden: true, role: 'toolbar', 'aria-label': 'Image' },
+      el('span', { class: 'cr-tbar-l' }, 'Image'),
+      ...['25%', '50%', '75%', '100%'].map(w => ibtn(w, () => setImg({ width: w }), () => (ia().width || '100%') === w)),
+      el('span', { class: 'cr-tbar-sep' }),
+      ...[['left', 'Left'], ['center', 'Centre'], ['right', 'Right']].map(([a, l]) => ibtn(l, () => setImg({ align: a }), () => (ia().align || 'center') === a)),
+      el('span', { class: 'cr-tbar-sep' }),
+      ibtn('Alt text…', async () => { const v = await ask('Describe the image', ia().alt || '', { placeholder: 'e.g. Team photo at the launch', hint: 'Read out by screen readers, and kept in the Word file.' }); if (v !== null) setImg({ alt: v || null }); }),
+      ibtn('Remove', () => ed().chain().focus().deleteSelection().run()));
+    ibar.lastChild.classList.add('danger');
+    paints.push(() => { ibar.hidden = !ed().isActive('image'); });
+
+    const wrap = el('div', { class: 'cr-tbw' }, node, tbar, ibar);
     return { node: wrap, paint: () => { if (ed()) paints.forEach(p => { try { p(); } catch (e) {} }); } };
+  }
+
+  /* ---------- version history ---------- */
+  // A side sheet listing the versions by day. Pick one to preview it on its page; restoring keeps a copy of
+  // what is there now first, so a restore can always be undone.
+  function historyPanel(E, titleInput, changed) {
+    const dlg = el('dialog', { class: 'cr-dlg cr-hist', 'aria-label': 'Version history' });
+    const body = el('div', { class: 'cr-hist-body' });
+    let versions = [];
+    const close = () => dlg.close();
+    async function list() {
+      body.replaceChildren(el('p', { class: 'meta' }, 'Loading…'));
+      try { versions = await q(sb.from('document_versions').select(VCOLS).eq('document_id', E.doc.id).order('created_at', { ascending: false }).limit(300)); }
+      catch (e) { body.replaceChildren(el('p', { class: 'meta' }, 'Couldn’t load the history.')); return; }
+      const groups = [];
+      versions.forEach(v => { const d = vDay(v); if (!groups.length || groups[groups.length - 1][0] !== d) groups.push([d, []]); groups[groups.length - 1][1].push(v); });
+      body.replaceChildren(
+        el('div', { class: 'cr-hist-top' },
+          el('button', { class: 'btn primary cr-small', type: 'button', onclick: async () => {
+            const name = await ask('Save version', '', { placeholder: 'e.g. Sent to client', ok: 'Save', hint: 'Named versions are kept for as long as the document. Automatic ones are kept for 90 days, then one a day.' });
+            if (name === null) return;
+            await E.flush();
+            try { await snapshot(E, 'named', name || 'Saved version'); toast('Version saved.'); list(); } catch (e) {}
+          } }, '+ Save version'),
+          el('p', { class: 'meta' }, 'A version is kept every 10 minutes while you write, and when you leave the document.')),
+        ...(versions.length ? groups.map(([day, vs]) => el('section', { class: 'cr-hist-day' }, el('h3', {}, day),
+          el('ul', {}, vs.map(v => el('li', {},
+            el('button', { type: 'button', class: 'cr-hist-v' + (v.kind === 'named' ? ' named' : ''), onclick: () => preview(v) },
+              el('time', {}, vTime(v)), el('b', {}, vLabel(v)), el('small', {}, plural(v.word_count || 0, 'word'))),
+            v.kind === 'named' ? el('button', { type: 'button', class: 'cr-ic cr-hist-x', title: 'Delete this version', 'aria-label': 'Delete this version', onclick: async () => {
+              if (!confirm(`Delete the version "${vLabel(v)}"?`)) return; await q(sb.from('document_versions').delete().eq('id', v.id)); list(); } }, icon('trash', 15)) : null)))))
+          : [el('p', { class: 'cr-hist-none' }, 'No versions yet. The first one is kept after 10 minutes of writing, or when you leave the document. You can also save one now.')]));
+    }
+    async function preview(v) {
+      body.replaceChildren(el('p', { class: 'meta' }, 'Loading…'));
+      let full;
+      try { full = await q(sb.from('document_versions').select('*').eq('id', v.id).single()); } catch (e) { return list(); }
+      const page = el('div', { class: 'cr-hist-page cr-paper-type' });
+      page.innerHTML = full.html || '';
+      page.querySelectorAll('[contenteditable]').forEach(n => n.removeAttribute('contenteditable'));
+      page.querySelectorAll('input').forEach(n => { n.disabled = true; });
+      signDom(page);
+      body.replaceChildren(
+        el('div', { class: 'cr-hist-top' },
+          el('button', { class: 'btn cr-small', type: 'button', onclick: list }, '← All versions'),
+          el('button', { class: 'btn primary cr-small', type: 'button', onclick: async () => {
+            await E.flush();
+            try { await snapshot(E, 'restore', `Before restoring ${vDay(v)} ${vTime(v)}`); } catch (e) { return; }
+            const json = await signContent(full.content);
+            E.editor.commands.setContent(json, { emitUpdate: true });
+            if (full.title) { E.doc.title = full.title; titleInput.value = full.title; }
+            E.changedSinceVersion = false;
+            changed();
+            close();
+            toast(`Restored the version from ${vDay(v)} ${vTime(v)}. What was there before is in the history.`);
+          } }, 'Restore this version')),
+        el('p', { class: 'cr-hist-meta' }, el('b', {}, vLabel(v)), ` · ${vDay(v)} ${vTime(v)} · ${plural(full.word_count || 0, 'word')}`, full.title && full.title !== E.doc.title ? ` · titled “${full.title}”` : ''),
+        el('div', { class: 'cr-hist-desk' }, page));
+      body.scrollTop = 0;
+    }
+    dlg.append(el('div', { class: 'cr-hist-head' }, el('h2', {}, 'Version history'),
+      el('button', { class: 'cr-ic', type: 'button', 'aria-label': 'Close', title: 'Close', onclick: close }, el('span', { 'aria-hidden': 'true', class: 'cr-x' }, '×'))), body);
+    dlg.addEventListener('close', () => dlg.remove());
+    dlg.addEventListener('click', e => { if (e.target === dlg) close(); });
+    E.onVersion = () => { if (dlg.isConnected && body.querySelector('.cr-hist-day, .cr-hist-none')) list(); };
+    document.body.append(dlg); dlg.showModal();
+    list();
+  }
+
+  /* ---------- links to tasks ---------- */
+  // A document is linked to a task through the task's own links (so it shows in the task's panel);
+  // the link is the app's address with #doc=<id>, and opens the document here.
+  const docUrl = id => location.origin + '/#doc=' + id;
+  async function drawTaskLinks(doc, box) {
+    let rows = [];
+    try { rows = await q(sb.from('task_links').select('id,task_id,tasks(title,status)').like('url', '%#doc=' + doc.id)); } catch (e) { return; }
+    rows = rows.filter(r => r.tasks);
+    box.replaceChildren(...(rows.length ? [el('span', { class: 'cr-meta-l' }, rows.length > 1 ? 'Tasks' : 'Task'),
+      ...rows.map(r => el('span', { class: 'cr-tlink' + (r.tasks.status === 'done' ? ' done' : '') },
+        el('button', { type: 'button', class: 'cr-tlink-t', title: 'Open the task', onclick: () => (DS.openItem || DS.openDrawer)(r.task_id) }, r.tasks.title),
+        el('button', { type: 'button', class: 'cr-tlink-x', 'aria-label': 'Unlink ' + r.tasks.title, title: 'Unlink', onclick: async () => { await q(sb.from('task_links').delete().eq('id', r.id)); drawTaskLinks(doc, box); } }, '×')))] : []));
+  }
+  async function linkTask(doc, done) {
+    const t0 = today(), ws = DS.weekStart(t0), ms = DS.monthStart(t0);
+    let tasks = [];
+    try { tasks = await q(sb.from('tasks').select('id,title,horizon,period_start,status').in('period_start', [...new Set([t0, ws, ms])]).neq('status', 'carried').order('position')); } catch (e) { return; }
+    tasks = tasks.filter(t => (t.horizon === 'day' && t.period_start === t0) || (t.horizon === 'week' && t.period_start === ws) || (t.horizon === 'month' && t.period_start === ms));
+    const dlg = el('dialog', { class: 'cr-dlg', 'aria-label': 'Link to a task' });
+    const search = el('input', { class: 'field', type: 'search', placeholder: 'Search tasks', 'aria-label': 'Search tasks' });
+    const listEl = el('div', { class: 'cr-tpick' });
+    const pick = async t => {
+      try { await q(sb.from('task_links').insert({ user_id: DS.uid(), task_id: t.id, url: docUrl(doc.id), label: ('📄 ' + (doc.title || 'Untitled')).slice(0, 200) })); }
+      catch (e) { return; }
+      dlg.close(); toast(`Linked to “${t.title}”. It shows in the task’s links.`); done && done();
+    };
+    function draw() {
+      const s = search.value.trim().toLowerCase();
+      const groups = [['day', 'Today'], ['week', 'This week'], ['month', 'This month']].map(([h, l]) => [l, tasks.filter(t => t.horizon === h && (!s || t.title.toLowerCase().includes(s)))]).filter(g => g[1].length);
+      listEl.replaceChildren(...(groups.length ? groups.map(([l, ts]) => el('section', {}, el('h3', {}, l),
+        ts.map(t => el('button', { type: 'button', class: 'cr-tpick-b' + (t.status === 'done' ? ' done' : ''), onclick: () => pick(t) }, t.title))))
+        : [el('p', { class: 'meta' }, tasks.length ? 'No task matches that.' : 'No tasks on today’s sheet, this week or this month yet.')]));
+    }
+    search.addEventListener('input', draw);
+    dlg.append(el('div', { class: 'dlg' }, el('h2', {}, 'Link to a task'),
+      el('p', { class: 'meta', style: 'margin:-8px 0 0' }, `“${doc.title || 'Untitled'}” will appear in the task’s links, one click away.`),
+      search, listEl,
+      el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', onclick: () => dlg.close() }, 'Cancel'))));
+    dlg.addEventListener('close', () => dlg.remove());
+    document.body.append(dlg); dlg.showModal(); draw(); search.focus();
+  }
+
+  /* ---------- documents on a project's page (used by projects.js) ---------- */
+  function forProject(ids, mainId) {
+    const box = el('section', { class: 'section cr-pj' }, el('h2', {}, 'Documents'), el('p', { class: 'meta' }, 'Loading…'));
+    ensure().then(() => {
+      const docs = live().filter(d => ids.includes(d.project_id)).sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (b.updated_at > a.updated_at ? 1 : -1));
+      box.replaceChildren(
+        el('div', { class: 'cr-pj-head' }, el('h2', {}, 'Documents'), docs.length ? el('span', { class: 'cr-count' }, String(docs.length)) : null,
+          el('button', { class: 'btn cr-small', type: 'button', onclick: () => templateDialog(null, mainId) }, '+ New document')),
+        docs.length ? el('div', { class: 'cr-cards' }, docs.slice(0, 12).map(card))
+          : el('p', { class: 'meta' }, 'No documents for this project yet. Start one here, or pick this project on any document in Create.'),
+        ...(docs.length > 12 ? [el('p', { class: 'meta' }, `Showing the latest 12 of ${docs.length}.`)] : []));
+    }, () => box.remove());
+    return box;
   }
 
   /* ---------- page setup ---------- */
@@ -667,10 +936,14 @@
     document.getElementById('cr-print-page')?.remove();
     const holder = el('div', { id: 'cr-print', class: 'cr-paper-type' });
     holder.innerHTML = E.editor.getHTML();
+    holder.style.cssText = 'position:fixed;left:-10000px;top:0;width:18cm';
+    document.body.append(holder);
+    await signDom(holder);
+    holder.style.cssText = '';
     // checklists print as boxes
     holder.querySelectorAll('ul[data-type="taskList"] > li').forEach(li => { li.prepend(el('span', { class: 'cr-box' }, li.getAttribute('data-checked') === 'true' ? '☑' : '☐')); });
     const css = el('style', { id: 'cr-print-page' }, `@page{size:${w}cm ${h}cm;margin:${m[0]}cm ${m[1]}cm ${m[2]}cm ${m[3]}cm}`);
-    document.head.append(css); document.body.append(holder);
+    document.head.append(css);
     const oldTitle = document.title;
     document.title = fileName(E.doc.title);
     document.documentElement.classList.add('cr-printing');
@@ -685,12 +958,27 @@
     toast('Preparing your Word file…');
     await E.flush();
     try { await loadScript('/create-docx.js?v=1'); } catch (e) { return toast(e.message); }
-    const blob = await toDocx(E.editor.getJSON(), E.doc);
+    const json = E.editor.getJSON();
+    const blob = await toDocx(json, E.doc, await fetchImages(json));
     saveFile(blob, fileName(E.doc.title) + '.docx');
     toast('Word file downloaded.');
   }
 
-  async function toDocx(json, doc) {
+  // The images' bytes and sizes, read from storage, for the Word file.
+  async function fetchImages(json) {
+    const out = {};
+    for (const path of new Set(imagePaths(json))) {
+      try {
+        const { data, error } = await imgStore().download(path);
+        if (error || !data) continue;
+        const bmp = await createImageBitmap(data);
+        out[path] = { data: new Uint8Array(await data.arrayBuffer()), w: bmp.width, h: bmp.height, type: /\.png$/i.test(path) ? 'png' : /\.gif$/i.test(path) ? 'gif' : 'jpg' };
+      } catch (e) {}
+    }
+    return out;
+  }
+
+  async function toDocx(json, doc, images = {}) {
     const D = window.CrDocx;
     const TW = cm => Math.round(cm / 2.54 * 1440);
     const pg = pageOf(doc), dims = pageDims({ ...pg, orient: 'portrait' }), m = dims.m;
@@ -754,6 +1042,11 @@
           case 'bulletList': case 'orderedList': out.push(...list(n, ctx, 0)); break;
           case 'taskList': out.push(...tasks(n, ctx, 0)); break;
           case 'table': out.push(table(n), new D.Paragraph({})); break;
+          case 'image': { const a = n.attrs || {}, im = images[a.path]; if (!im) break;
+            const wpx = (contentW / 15) * Math.min(1, (parseFloat(a.width) || 100) / 100), hpx = wpx * im.h / im.w, alt = a.alt || 'Image';
+            out.push(new D.Paragraph({ alignment: ALIGN[a.align] || D.AlignmentType.CENTER, spacing: { after: 160 },
+              children: [new D.ImageRun({ type: im.type, data: im.data, transformation: { width: Math.round(wpx), height: Math.round(hpx) }, altText: { title: alt, description: alt, name: alt } })] }));
+            break; }
           default: if (n.content) out.push(...blocks(n.content, ctx));
         }
       }
@@ -847,7 +1140,7 @@
 
   /* ---------- wiring ---------- */
   DS.views.create = viewCreate;
-  DS.create = { load, ensure, open: openDoc, toDocx };
+  DS.create = { load, ensure, open: openDoc, toDocx, forProject };
 
   function ensureNav() {
     const nav = document.querySelector('#app nav.nav');
@@ -863,7 +1156,7 @@
   function tick() {
     ensureNav();
     // Left the Create tab with a document open: save it and close the editor.
-    if (state.view !== 'create' && C.ed) { const E = C.ed; C.ed = null; C.open = null; E.flush().finally(() => E.destroy()); }
+    if (state.view !== 'create' && C.ed) { const E = C.ed; C.ed = null; C.open = null; E.leave().finally(() => E.destroy()); }
     if (state.view !== 'create' && focusOn()) setFocus(false);
   }
   let pending = false;
@@ -877,8 +1170,28 @@
     if (C.ed && C.ed.editor) { C.ed.flush(); if (C.ed.dirty || C.ed.saving) { e.preventDefault(); e.returnValue = ''; } }
   });
 
-  if (location.hash.slice(1) === 'create') {
+  const DOC_LINK = /#doc=([0-9a-f-]{36})\b/i;
+  function openFromLink(id) {
+    if (DS.closeItem) DS.closeItem();
+    if (DS.closeDrawer) DS.closeDrawer();
+    if (C.ed && C.open === id) return;
+    const go = () => { C.open = id; DS.go('create'); try { history.replaceState(null, '', '#create'); } catch (e) {} window.scrollTo(0, 0); };
+    if (C.ed) closeDoc().then(go); else go();
+  }
+  document.addEventListener('click', e => {
+    const a = e.target.closest && e.target.closest('a[href*="#doc="]');
+    const m = a && a.getAttribute('href').match(DOC_LINK);
+    if (!m || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    e.preventDefault(); e.stopPropagation();
+    openFromLink(m[1]);
+  }, true);
+  window.addEventListener('hashchange', () => { const m = location.hash.match(DOC_LINK); if (m && state.user) openFromLink(m[1]); });
+
+  const bootDoc = location.hash.match(DOC_LINK);
+  if (bootDoc) C.open = bootDoc[1];
+  if (bootDoc || location.hash.slice(1) === 'create') {
     state.view = 'create';
+    try { history.replaceState(null, '', '#create'); } catch (e) {}
     if (state.user && document.getElementById('main')) DS.go('create');
   }
 })();
