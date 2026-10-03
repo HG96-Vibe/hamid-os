@@ -192,8 +192,8 @@
         P.playing = false; paintCard();
       } } });
     // played: count it and move it to "Recently played"
+    // (the page itself isn't redrawn: only the playing card's highlight moves, so nothing jumps)
     patch(it, { plays: (it.plays || 0) + 1, last_played_at: new Date().toISOString() }).catch(() => {});
-    if (state.view === 'listen') drawPage();
   }
   function onState(it, s) {
     if (P.item !== it) return;
@@ -255,7 +255,7 @@
     Object.assign(P, { item: null, yt: null, playing: false, shuffleCat: null, byFocus: false, big: false, sleepAt: 0, sleepFocus: false, error: null });
     document.body.classList.remove('ls-big');
     card && card.remove(); card = null;
-    if (state.view === 'listen') drawPage();
+    document.querySelectorAll('.ls-tile.playing').forEach(t => t.classList.remove('playing'));
   }
 
   /* ---------- sleep timer ---------- */
@@ -506,6 +506,10 @@
 
   function drawPage() {
     if (!pageEl) return;
+    // keep each row where it was scrolled to, and the page where it was
+    const kept = {};
+    pageEl.querySelectorAll('.ls-sec').forEach(sec => { const g = sec.querySelector('.ls-grid'), h = sec.querySelector('h2'); if (g && h) kept[h.textContent] = g.scrollLeft; });
+    const y = window.scrollY;
     const s = L.search.trim().toLowerCase();
     const match = it => !s || (it.title || '').toLowerCase().includes(s) || (it.channel || '').toLowerCase().includes(s) || it.category.toLowerCase().includes(s);
     const items = L.items.filter(match);
@@ -545,6 +549,8 @@
     pageEl.querySelector('.ls-chips').replaceChildren(...chips.map(c => el('button', { type: 'button', class: 'ls-chip' + (L.cat === c ? ' on' : ''), 'aria-pressed': String(L.cat === c),
       onclick: () => { L.cat = c; store('ls_cat', c); drawPage(); } }, c)));
     pageEl.querySelector('.ls-body').replaceChildren(...[body].flat().filter(Boolean));
+    pageEl.querySelectorAll('.ls-sec').forEach(sec => { const g = sec.querySelector('.ls-grid'), h = sec.querySelector('h2'); if (g && h && kept[h.textContent]) { g.style.scrollBehavior = 'auto'; g.style.scrollSnapType = 'none'; g.scrollLeft = kept[h.textContent]; requestAnimationFrame(() => { g.style.scrollSnapType = ''; g.style.scrollBehavior = ''; }); } });
+    if (Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y);
   }
 
   function soundsPanel() {
