@@ -35,9 +35,11 @@
     };
     var layout = function () {
       // Sit in the empty right-hand margin beside the page when it is wide enough; otherwise at 80% across.
-      var phone = W < 760, margin = (W - Math.min(1140, W - 40)) / 2, s = Math.min(150, Math.max(96, W * .09));
-      if (!phone && margin > 116) s = Math.min(s, margin - 36);
-      var cx = phone ? W * .5 : margin > 116 ? W - margin / 2 : W * .8, cy = H * (phone ? .22 : .32);
+      // the page is 1140px wide, or about 94% of the window on wide screens (wide.css)
+      var page = W >= 1320 ? Math.min(W * .94, 2000) - 100 : Math.min(1140, W - 40);
+      var phone = W < 760, margin = (W - page) / 2, s = Math.min(150, Math.max(96, W * .09)), fits = margin > 96;
+      if (!phone && fits) s = Math.max(64, Math.min(s, margin - 32));
+      var cx = phone ? W * .5 : fits ? W - margin / 2 : W * .8, cy = H * (phone ? .22 : .32);
       chip = { x: cx - s / 2, y: cy - s / 2, s: s, glow: 0 }; traces = []; sigs = [];
       var pins = 7, gap = s / (pins + 1);
       for (var side = 0; side < 4; side++) for (var i = 1; i <= pins; i++) {

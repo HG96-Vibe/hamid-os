@@ -1,0 +1,21 @@
+/* Wide screens (Mac): the header and every page use about 94% of the window instead of a fixed 1140px column.
+   Home's side cards spread into two columns, so the page reads as three. Phones and small laptops are unchanged. */
+@media (min-width:1320px){
+  :root{--wide:min(94vw,2000px)}
+  main{max-width:calc(var(--wide) - 100px)}
+  .bar{width:min(var(--wide),calc(100% - 32px))}
+  /* Display size: the app is zoomed, so divide to keep the same on-screen width */
+  html.ds-zoomed main{max-width:calc((var(--wide) - 100px) / var(--ds-zoom))}
+  html.ds-zoomed .bar{width:min(calc(var(--wide) / var(--ds-zoom)),calc(100% - 32px))}
+  html.ds-zoomed.cr-editing main{max-width:calc(var(--wide) - 100px)}
+
+  /* Home: main column plus the side cards in two columns */
+  .hm-cols{grid-template-columns:minmax(0,1.25fr) minmax(0,1fr)}
+  .hm-cols>aside.hm-col{display:block;columns:2;column-gap:16px}
+  .hm-cols>aside.hm-col>*{break-inside:avoid;margin:0 0 16px}
+  /* the quote can run wider, so short quotes stay on one or two lines */
+  .hm-quote{max-width:min(100%,1180px)}
+  /* side panels on Today, Week and Month get a little more room */
+  .td-cols{grid-template-columns:minmax(0,1fr) 360px}
+  .cols{grid-template-columns:minmax(0,1fr) 350px}
+}
