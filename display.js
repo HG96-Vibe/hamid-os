@@ -1,15 +1,17 @@
 // Display size for computers: scales the whole app down so more fits on one screen.
-// Defaults to 80%. The choice is kept per device (localStorage); phones are unaffected.
+// Defaults to 88%. The choice is kept per device (localStorage); phones are unaffected.
 // Also an option to shrink the quote banner on Home. Adds a "Display size" section to Settings.
 (function () {
   'use strict';
   const KEY = 'ds_display_size';
   const HERO = 'ds_hero_size';
-  const SIZES = [['auto', 'Auto'], ['100', '100%'], ['90', '90%'], ['80', '80%'], ['70', '70%']];
+  const SIZES = [['auto', 'Auto'], ['100', '100%'], ['88', '88%'], ['80', '80%'], ['70', '70%']];
   const root = document.documentElement;
   const desktop = window.matchMedia('(min-width:901px)');
 
-  const read = () => { try { return localStorage.getItem(KEY) || '80'; } catch (e) { return '80'; } };
+  const read = () => { try { return localStorage.getItem(KEY) || '88'; } catch (e) { return '88'; } };
+  // 3 Oct 2026: the default went from 80% to 88%; move anyone still on the old default along with it.
+  try { if (!localStorage.getItem('ds_display_v2')) { if (localStorage.getItem(KEY) === '80') localStorage.setItem(KEY, '88'); localStorage.setItem('ds_display_v2', '1'); } } catch (e) {}
   const write = v => { try { localStorage.setItem(KEY, v); } catch (e) {} };
   const readHero = () => { try { return localStorage.getItem(HERO) || 'smaller'; } catch (e) { return 'smaller'; } };
   const writeHero = v => { try { localStorage.setItem(HERO, v); } catch (e) {} };

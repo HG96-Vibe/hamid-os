@@ -20,5 +20,7 @@ html.ds-hero-compact .hm-hero-top{padding-right:90px}
 html.ds-hero-compact .hm-qedit{bottom:16px;right:18px}
 @media (max-width:560px){html.ds-hero-compact .hm-quote{padding-right:0}html.ds-hero-compact .hm-hero{padding:18px 18px 56px}}
 
-/* Smaller quote banner (the default): the full banner at 70%, still full width */
+/* Smaller quote banner (the default): the full banner at 70% on phones; on computers it stays at 56% of
+   full size (70% of the old 80% page) whatever the page size is set to */
 html.ds-hero-smaller .hm-hero{zoom:.7}
+@media (min-width:901px){html.ds-hero-smaller.ds-zoomed .hm-hero{zoom:calc(.56 / var(--ds-zoom))}}
