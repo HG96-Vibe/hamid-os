@@ -1,5 +1,5 @@
 // Opening animation: waits (at most 0.8s) for the font and bulb image so nothing pops in mid-animation,
-// then plays for ~3.6s and fades out. Not shown at all on phones. Tap, click or any key skips it.
+// then plays for ~4.6s (the "Hamid OS" name holds for about 2s at the end) and fades out. Not shown at all on phones. Tap, click or any key skips it.
 (function () {
   var el = document.getElementById('intro');
   if (!el) return;
@@ -17,7 +17,7 @@
     if (started || done) return;
     started = true;
     el.classList.add('in-go');
-    setTimeout(end, reduce ? 1200 : 3700);
+    setTimeout(end, reduce ? 2200 : 4700);
   }
   var waits = [];
   try { if (document.fonts && document.fonts.load) waits.push(document.fonts.load('800 40px "Bricolage Grotesque"')); } catch (e) {}
