@@ -1,10 +1,11 @@
 /* Finished items, everywhere: emerald instead of a ticked circle and a line through the words.
-   Cards keep their gold edge; the tick circle or box is hidden (open the item and press Reopen to undo).
+   Cards get a darker emerald edge instead of the gold one; the tick circle or box is hidden (open the item and press Reopen to undo).
    Loaded last so it applies in both themes. Today's strips are styled in today.css. */
-:root{--done-bg:linear-gradient(135deg,#10b981,#059669);--done-gold:linear-gradient(180deg,#fbbf24,#d97706 60%,#b45309);--done-chip:rgba(255,255,255,.2)}
+:root{--done-bg:linear-gradient(135deg,#10b981,#059669);--done-edge:linear-gradient(180deg,#047857,#065f46);--done-chip:rgba(255,255,255,.2)}
 
 /* Month outcomes and Week priorities (the white cards with the gold edge) */
 .outcome.s-done{background:var(--done-bg);color:#fff}
+.outcome.s-done::before{background:var(--done-edge)}
 .outcome.s-done .ocheck{display:none}
 .outcome.s-done .otitle,.outcome.s-done .otitle:hover{color:#fff;text-decoration:none}
 .outcome.s-done .onum{-webkit-text-stroke-color:rgba(255,255,255,.75)}
@@ -17,7 +18,7 @@
 
 /* rows inside white tiles: Home's top 5, Today's week and month boxes, project cards, the side panel's weeks */
 :is(.hm-top3 li.s-done,.td-mini li.done,.pj-items li.s-done,.op-weeks li.done,.dweeks li.done){
-  background:var(--done-gold) left/5px 100% no-repeat,var(--done-bg);color:#fff;border-radius:10px;padding:8px 10px 8px 15px;border-bottom-color:transparent}
+  background:var(--done-edge) left/5px 100% no-repeat,var(--done-bg);color:#fff;border-radius:10px;padding:8px 10px 8px 15px;border-bottom-color:transparent}
 .hm-top3 li.s-done{margin:3px 0}
 .td-mini li.done input,.hm-top3 li.s-done .ocheck,.pj-items li.s-done .pj-tick,.op-weeks li.done .op-tick,.dweeks li.done .dtick{display:none}
 :is(.hm-top3 li.s-done .hm-top-t,.td-mini li.done .td-mini-t,.pj-items li.s-done .pj-it,.op-weeks li.done .op-wt,.dweeks li.done .dwt){color:#fff;text-decoration:none}
@@ -26,10 +27,10 @@
 .hm-top3 li.s-done .hm-ic.star{color:#fde68a}
 
 /* the plain task lists and side lists */
-.task.s-done{background:var(--done-gold) left/5px 100% no-repeat,var(--done-bg);border-radius:12px;border-bottom-color:transparent;margin:3px 0}
+.task.s-done{background:var(--done-edge) left/5px 100% no-repeat,var(--done-bg);border-radius:12px;border-bottom-color:transparent;margin:3px 0}
 .task.s-done .check{display:none}
 .task.s-done .title{color:#fff;text-decoration:none}
 .task.s-done :is(.tag,.badge){color:#fff;filter:none;border-color:rgba(255,255,255,.5)}
-.mini li.done{background:var(--done-gold) left/5px 100% no-repeat,var(--done-bg);color:#fff;border-radius:10px;padding:6px 10px 6px 14px}
+.mini li.done{background:var(--done-edge) left/5px 100% no-repeat,var(--done-bg);color:#fff;border-radius:10px;padding:6px 10px 6px 14px}
 .mini li.done input{display:none}
 .mini li.done span{color:#fff;text-decoration:none}

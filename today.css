@@ -13,9 +13,9 @@
 .td-title{border:0;background:none;padding:0;text-align:left;font:700 17px/1.35 var(--ui);color:#1e1b4b;overflow-wrap:anywhere;cursor:pointer}
 .td-title:hover{color:var(--i700)}
 .td-row.s-dropped .td-title,.td-row.s-carried .td-title{color:#9a9dc0;text-decoration:line-through}
-/* Done: the strip turns emerald (the gold edge stays), with no circle and no line through the title.
+/* Done: the strip turns emerald (with a darker emerald edge), with no circle and no line through the title.
    To undo, open the task and press Reopen. */
-.td-row.s-done{background:linear-gradient(180deg,#fbbf24,#d97706 60%,#b45309) left/6px 100% no-repeat,linear-gradient(135deg,#10b981,#059669);color:#fff;
+.td-row.s-done{background:linear-gradient(180deg,#047857,#065f46) left/6px 100% no-repeat,linear-gradient(135deg,#10b981,#059669);color:#fff;
   transition:background .35s ease,transform .15s,box-shadow .15s}
 .td-row.s-done .ocheck{display:none}
 .td-row.s-done .td-title,.td-row.s-done .td-title:hover{color:#fff;text-decoration:none}
