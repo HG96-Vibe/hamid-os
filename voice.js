@@ -81,13 +81,80 @@
     return out;
   }
 
+  /* ---------- Natural voices: Microsoft Azure, through the tts Edge Function (free F0 plan) ---------- */
+  const AZURE = [['en-GB-OllieMultilingualNeural', 'Ollie', 'male'], ['en-GB-RyanNeural', 'Ryan', 'male'], ['en-GB-ThomasNeural', 'Thomas', 'male'],
+    ['en-GB-SoniaNeural', 'Sonia', 'female'], ['en-GB-LibbyNeural', 'Libby', 'female'], ['en-GB-MaisieNeural', 'Maisie', 'female'], ['en-GB-AbbiNeural', 'Abbi', 'female']];
+  const DEFAULT_AZURE = 'azure:en-GB-OllieMultilingualNeural';
+  // Ollie is the default; a device voice is used only when picked in Settings (or as the fallback).
+  // 5 Oct 2026: Ollie was chosen as the reading voice; move every device over to him once.
+  try { if (!localStorage.getItem('ds_voice_v3')) { localStorage.setItem('ds_voice_uri', 'azure:en-GB-OllieMultilingualNeural'); localStorage.setItem('ds_voice_v3', '1'); } } catch (e) {}
+  const azureId = () => { const u = store('ds_voice_uri') || DEFAULT_AZURE; return u.startsWith('azure:') ? u.slice(6) : null; };
+  const azureName = id => (AZURE.find(a => a[0] === id) || [id, 'Ollie'])[1];
+  const A = { down: null };   // why natural voices aren't working right now (so we don't keep asking)
+  const KA = typeof Audio !== 'undefined' ? new Audio() : null; // plays even with the iPhone's ring switch on silent
+  const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+  const fnUrl = () => ((DS.sb && DS.sb.supabaseUrl) || 'https://xxvsosusnqnrgdigqfyw.supabase.co') + '/functions/v1/tts';
+  async function callTts(body) {
+    const { data: { session } } = await DS.sb.auth.getSession();
+    if (!session) throw Object.assign(new Error('auth'), { code: 'auth' });
+    const headers = { Authorization: 'Bearer ' + session.access_token, 'Content-Type': 'application/json' };
+    if (DS.sb.supabaseKey) headers.apikey = DS.sb.supabaseKey;
+    for (let attempt = 0; ; attempt++) {
+      const r = await fetch(fnUrl(), { method: 'POST', headers, body: JSON.stringify(body) });
+      if (r.ok) return r;
+      let code = 'azure'; try { code = (await r.json()).error || code; } catch (e) {}
+      if (code === 'busy' && attempt < 2) { await new Promise(ok => setTimeout(ok, 2500 * (attempt + 1))); continue; } // free plan: a few requests a minute
+      throw Object.assign(new Error(code), { code });
+    }
+  }
+  const DOWN_MSG = { not_set_up: 'Natural voices aren’t set up yet, so your device voice is reading.', quota: 'This month’s free Azure allowance is used up, so your device voice will read until next month.',
+    key: 'The Azure key isn’t working, so your device voice is reading. Check it in Supabase → Edge Functions → Secrets.', auth: 'Sign in again to use the natural voice.' };
+  // Fewer, longer pieces than the device voice: the free plan allows only so many requests a minute.
+  // The first piece is short so speech starts quickly.
+  function group(parts) {
+    const out = []; let cur = '';
+    for (const p of parts) {
+      const limit = out.length ? 700 : 220;
+      if (cur && (cur + ' ' + p).length > limit) { out.push(cur); cur = p; } else cur = cur ? cur + ' ' + p : p;
+    }
+    if (cur) out.push(cur);
+    return out;
+  }
+  P.ac = new Map(); P.atok = 0; P.engine = 'device';
+  function aClear() { P.ac.forEach(pr => pr.then(u => URL.revokeObjectURL(u), () => {})); P.ac = new Map(); }
+  function aGet(i) {
+    if (!P.ac.has(i)) { const pr = callTts({ text: P.parts[i], voice: P.avoice }).then(r => r.blob()).then(b => URL.createObjectURL(b)); pr.catch(() => {}); P.ac.set(i, pr); }
+    return P.ac.get(i);
+  }
+  async function aSpeak() {
+    const tok = ++P.atok, i = P.i;
+    if (i >= P.parts.length) { finish(); return; }
+    paintBar();
+    let url;
+    try { url = await aGet(i); }
+    catch (e) {
+      if (tok !== P.atok) return;
+      A.down = e.code || 'azure';
+      toast(DOWN_MSG[A.down] || 'The natural voice isn’t available right now, so your device voice is reading.');
+      P.engine = 'device'; speakCurrent(); return;
+    }
+    if (tok !== P.atok || !P.playing) return;
+    if (i + 1 < P.parts.length) aGet(i + 1); // get the next piece ready while this one plays
+    KA.src = url; KA.playbackRate = rate(); KA.preservesPitch = true;
+    KA.onended = () => { if (tok === P.atok && P.playing) { P.i++; aSpeak(); } };
+    KA.play().catch(() => { if (tok === P.atok) { pause(); toast('Tap play to listen.'); } });
+  }
+  function halt() { P.cur = null; P.atok++; if (TTS) TTS.cancel(); if (KA) KA.pause(); }
+
   // iPhone only lets a page speak if the first speech starts straight from a tap; this does that, silently.
   function unlock() {
+    if (KA && azureId()) { try { KA.src = SILENT; KA.play().catch(() => {}); } catch (e) {} }
     if (!TTS) return;
     try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; TTS.speak(u); } catch (e) {}
   }
 
   function speakCurrent() {
+    if (P.engine === 'azure') return aSpeak();
     if (!TTS) return;
     if (P.i >= P.parts.length) { finish(); return; }
     const u = new SpeechSynthesisUtterance(P.parts[P.i]);
@@ -102,12 +169,14 @@
     paintBar();
   }
   function play(text, label) {
-    if (!TTS) { toast('This browser can’t read aloud.'); return; }
-    const parts = Array.isArray(text) ? text.flatMap(chunk) : chunk(text);
+    const az = KA && azureId() && !(A.down && A.down !== 'busy' && A.down !== 'azure') ? azureId() : null;
+    if (!TTS && !az) { toast('This browser can’t read aloud.'); return; }
+    let parts = Array.isArray(text) ? text.flatMap(chunk) : chunk(text);
     if (!parts.length) { toast('There’s nothing to read here yet.'); return; }
+    if (az) parts = group(parts);
     stopDictation();
-    P.cur = null; TTS.cancel();
-    Object.assign(P, { parts, i: 0, playing: true, label: label || 'Reading' });
+    halt(); aClear();
+    Object.assign(P, { parts, i: 0, playing: true, label: label || 'Reading', engine: az ? 'azure' : 'device', avoice: az });
     showBar();
     speakCurrent();
     // Chrome on computers stops speaking after ~15s unless nudged
@@ -115,10 +184,10 @@
     if (!isApple) P.keepAlive = setInterval(() => { if (P.playing && TTS.speaking && !TTS.paused) { TTS.pause(); TTS.resume(); } }, 10000);
   }
   // Pausing restarts the current sentence on resume: pause / resume in phone browsers is unreliable.
-  function pause() { P.playing = false; P.cur = null; TTS && TTS.cancel(); paintBar(); }
+  function pause() { P.playing = false; halt(); paintBar(); }
   function resume() { if (P.i >= P.parts.length) P.i = 0; P.playing = true; speakCurrent(); }
-  function skip(n) { P.i = Math.max(0, Math.min(P.parts.length - 1, P.i + n)); P.cur = null; TTS.cancel(); if (P.playing) speakCurrent(); else paintBar(); }
-  function stop() { P.playing = false; P.cur = null; clearInterval(P.keepAlive); TTS && TTS.cancel(); P.bar && P.bar.remove(); P.bar = null; document.body.classList.remove('vx-playing'); }
+  function skip(n) { P.i = Math.max(0, Math.min(P.parts.length - 1, P.i + n)); halt(); if (P.playing) speakCurrent(); else paintBar(); }
+  function stop() { P.playing = false; halt(); aClear(); clearInterval(P.keepAlive); P.bar && P.bar.remove(); P.bar = null; document.body.classList.remove('vx-playing'); }
   function finish() { P.playing = false; P.cur = null; clearInterval(P.keepAlive); paintBar(true); setTimeout(() => { if (!P.playing) stop(); }, 2500); }
 
   function showBar() {
@@ -132,7 +201,8 @@
         b('vx-fwd', 'Next sentence', 'fwd', () => skip(1)),
         el('button', { type: 'button', class: 'vx-rate', 'aria-label': 'Reading speed', title: 'Reading speed', onclick: () => {
           const r = rate(), next = RATES[(RATES.findIndex(x => x >= r - 0.001) + 1) % RATES.length];
-          store('ds_voice_rate', String(next)); paintBar(); if (P.playing) { P.cur = null; TTS.cancel(); speakCurrent(); }
+          store('ds_voice_rate', String(next)); paintBar();
+          if (P.engine === 'azure') { if (KA) KA.playbackRate = next; } else if (P.playing) { halt(); speakCurrent(); }
         } }),
         b('vx-x', 'Stop reading', 'close', stop)),
       el('div', { class: 'vx-prog' }, el('i')));
@@ -419,13 +489,33 @@
     langSel.value = lang();
     const voiceSel = el('select', { class: 'field vx-sel', 'aria-label': 'Reading voice', onchange: () => { store('ds_voice_uri', voiceSel.value); fillVoices(); } });
     const found = el('p', { class: 'meta vx-tip' });
+    const azNote = el('p', { class: 'meta vx-tip vx-aznote' });
+    let checked = null;
+    // Is the natural voice ready? (asks the tts function; costs nothing from the allowance)
+    function checkAzure() {
+      const id = azureId();
+      azNote.hidden = !id;
+      if (!id) return;
+      azNote.textContent = `Checking ${azureName(id)}…`;
+      (checked = checked || callTts({ check: true }).then(r => r.json())).then(res => {
+        const ok = res.voices && res.voices.includes(azureId());
+        A.down = ok ? null : A.down;
+        azNote.textContent = ok ? `${azureName(azureId())} is ready. Natural voices come from Microsoft’s free plan (500,000 characters a month); what’s been read before is saved and doesn’t count again. If they’re ever unavailable, your device voice reads instead.`
+          : `${azureName(azureId())} isn’t offered in the Azure region you picked (${res.region}). Choose another voice, or make the Azure resource in West Europe.`;
+      }, e => { checked = null; azNote.textContent = DOWN_MSG[e.code] || 'The natural voice isn’t reachable right now; your device voice will read instead.'; });
+    }
     const rank = v => (quality(v) === 'Premium' ? 0 : quality(v) === 'Enhanced' ? 1 : 2);
     const fillVoices = () => {
       const vs = englishVoices().slice().sort((a, b) => (/^en[-_]GB/i.test(b.lang) - /^en[-_]GB/i.test(a.lang)) || rank(a) - rank(b) || a.name.localeCompare(b.name));
-      const best = bestVoice(), auto = !store('ds_voice_uri') || !vs.some(v => vid(v) === store('ds_voice_uri'));
-      voiceSel.replaceChildren(el('option', { value: '' }, 'Automatic' + (best && auto ? ` (${vlabel(best)})` : '')),
-        ...vs.map(v => el('option', { value: vid(v) }, `${vlabel(v)} · ${v.lang.replace('_', '-')}`)));
-      voiceSel.value = auto ? '' : store('ds_voice_uri');
+      const best = bestVoice(), cur = store('ds_voice_uri') || DEFAULT_AZURE;
+      const devAuto = !cur.startsWith('azure:') && !vs.some(v => vid(v) === cur);
+      voiceSel.replaceChildren(
+        KA ? el('optgroup', { label: 'Natural voices (Microsoft, free plan)' }, AZURE.map(([id, name, g]) => el('option', { value: 'azure:' + id }, `${name} · British ${g}`))) : null,
+        el('optgroup', { label: 'Built into this device' },
+          el('option', { value: 'device' }, 'Best on this device' + (best ? ` (${vlabel(best)})` : '')),
+          vs.map(v => el('option', { value: vid(v) }, `${vlabel(v)} · ${v.lang.replace('_', '-')}`))));
+      voiceSel.value = cur.startsWith('azure:') ? cur : devAuto ? 'device' : cur;
+      checkAzure();
       const good = vs.filter(v => quality(v)).length;
       found.textContent = `This device offers ${vs.length} English voice${vs.length === 1 ? '' : 's'}` + (good ? `, ${good} of them Enhanced or Premium.` : ', none of them Enhanced or Premium.')
         + (isApple && !good ? ' If you have downloaded Enhanced voices and they don’t show here, iOS isn’t sharing them with web apps on this version.' : '');
@@ -436,7 +526,7 @@
     const speed = el('input', { type: 'range', class: 'ds-range', min: '0.6', max: '2', step: '0.05', value: String(rate()), 'aria-label': 'Reading speed',
       oninput: () => { out.textContent = (+speed.value).toFixed(2).replace(/0$/, '') + '×'; }, onchange: () => store('ds_voice_rate', speed.value) });
     const sec = el('section', { class: 'section', id: 'vx-settings' }, el('h2', {}, 'Voice'),
-      el('p', { class: 'meta' }, 'Speak instead of typing, and have your day or a document read to you. It uses your phone’s and browser’s own voice features, so it’s free. Saved on this device.'),
+      el('p', { class: 'meta' }, 'Speak instead of typing, and have your day or a document read to you. Speaking uses your phone’s own features; reading uses a natural Microsoft voice (free plan) or your device’s voices. Saved on this device.'),
       el('h3', { class: 'vx-h' }, 'Speaking'),
       SR ? el('label', { class: 'ds-auto', for: 'vx-mic' }, micBox, el('span', {}, 'Show the mic button while I type')) : el('p', { class: 'meta vx-warn' },
         isApple ? 'Speaking isn’t available in this view on your iPhone. You can still use the mic key on the keyboard. If you have the app on your home screen, try opening it in Safari, and check Dictation is on (Settings → General → Keyboard).' : 'This browser can’t take dictation. Chrome, Edge and Safari can.'),
@@ -444,7 +534,7 @@
       SR ? el('p', { class: 'meta vx-tip' }, 'Say “comma”, “full stop”, “question mark”, “new line” or “new paragraph” for punctuation. Tap the mic again to stop.') : null,
       el('h3', { class: 'vx-h' }, 'Listening'),
       TTS ? [
-        el('label', { class: 'pj-lbl vx-row' }, el('span', { class: 'lbl' }, 'Voice'), voiceSel), found,
+        el('label', { class: 'pj-lbl vx-row' }, el('span', { class: 'lbl' }, 'Voice'), voiceSel), azNote, found,
         el('div', { class: 'ds-row vx-row' }, el('span', { class: 'lbl', style: 'margin:0' }, 'Speed'), speed, out),
         el('div', { class: 'ds-row' }, el('button', { type: 'button', class: 'btn', onclick: () => { unlock(); play('Good morning, Hamid. This is how your day and your documents will sound.', 'Voice test'); } }, 'Test the voice')),
         isApple ? el('p', { class: 'meta vx-tip' }, 'For a more natural voice on iPhone: Settings → Accessibility → Read & Speak (or Spoken Content) → Voices → English, and download an “Enhanced” or “Premium” voice such as Daniel or Serena. Then pick it here.') : null

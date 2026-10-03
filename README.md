@@ -41,7 +41,7 @@ features can be added without editing the core file. If `window.DS` is missing, 
 | `account.js` | Adds the sign-out row to Home. |
 | `header.js` | The header: a floating capsule on desktop and a bottom dock on phones. |
 | `brand.js` | Hamid OS branding: the name and motto, the profile strip on Home, the tab title and sign-in screen. |
-| `voice.js` | Voice, using the browser's and phone's built-in features (free): a mic button above the keyboard whenever you type anywhere (speech recognition, with spoken punctuation such as "comma", "full stop", "new paragraph"), and read-aloud with a player bar: "Read my day" on Home, Listen on Today and Week, and Listen in a document (from the cursor). Voice, speed, language and the mic button are set in Settings → Voice, saved per device. |
+| `voice.js` | Voice, using the browser's and phone's built-in features (free): a mic button above the keyboard whenever you type anywhere (speech recognition, with spoken punctuation such as "comma", "full stop", "new paragraph"), and read-aloud with a player bar: "Read my day" on Home, Listen on Today and Week, and Listen in a document (from the cursor). Reading uses a natural Microsoft voice (Ollie by default) through the `tts` Edge Function, falling back to the device's own voices; voice, speed, language and the mic button are set in Settings → Voice, saved per device. |
 | `display.js` | Display size for computers (a 60–120% slider, 88% default, or fit to the window) and the quote banner size on Home (Full, Smaller at 70% default, Compact), set in Settings and saved per device. |
 | `theme.js` | The "Chip" circuit background (colours follow the theme) and heading styling. Loads before `app.js` and does not depend on `window.DS`. |
 | `light.js` | Light mode ("Paper"). Dark is the default; the sun / moon button on the Home profile strip switches, saved per device. The refresh button under it reloads the whole app with the latest version. Loaded in `<head>` so there is no flash of the wrong theme. |
@@ -66,6 +66,7 @@ features can be added without editing the core file. If `window.DS` is missing, 
 | `hero-storm.webp` | Hero image used by the side panel (`panel.css`). |
 | `vercel.json` | Vercel headers (see above). |
 | `supabase/functions/reminders/index.ts` | Source of the `reminders` Edge Function. |
+| `supabase/functions/tts/index.ts` | Source of the `tts` Edge Function: turns text into speech with Microsoft Azure (free F0 plan) for Voice. Owner with 2FA only; keeps what it has made in the private `voice-cache` bucket so the same words are never paid for twice. |
 | `supabase/schema.sql` | The database's public schema as first imported: tables, RLS policies, functions, the sign-up trigger and the cron job. |
 | `tools/create-bundle/` | Source and pinned versions for `create-editor.js` and `create-docx.js`. Run `tools/create-bundle/build.sh` (needs Node) to rebuild them. Not deployed: `.vercelignore` keeps `tools/` off the site. |
 | `supabase/migrations/` | Database changes made since, applied in date order on top of `schema.sql` (each with an `_undo` script). |
@@ -114,7 +115,8 @@ demand.
 
 **No secrets are stored in this repo.** They live in Supabase:
 
-- `RESEND_API_KEY` and the service-role key are Edge Function secrets (Supabase dashboard → Edge Functions → Secrets).
+- `RESEND_API_KEY`, `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION` and the service-role key are Edge Function secrets
+  (Supabase dashboard → Edge Functions → Secrets).
 - The VAPID private key and the cron secret are rows in the `public.ds_secrets` table, which has RLS on and no
   policies, so only the service role can read it. `schema.sql` contains the table's structure but none of its rows.
 
@@ -125,8 +127,8 @@ and the VAPID **public** key. They are safe in the browser because RLS protects 
 
 - Database: run `supabase/schema.sql` against a fresh Supabase project, then add the `ds_secrets` rows
   (`vapid_public`, `vapid_private`, `cron_secret`) by hand.
-- Edge Function: `npx supabase functions deploy reminders --no-verify-jwt --project-ref <ref>`, then set
-  `RESEND_API_KEY` with `npx supabase secrets set`.
+- Edge Functions: `npx supabase functions deploy reminders --no-verify-jwt --project-ref <ref>` (and the same for
+  `tts`), then set `RESEND_API_KEY`, `AZURE_SPEECH_KEY` and `AZURE_SPEECH_REGION` with `npx supabase secrets set`.
 
 ## How this repo was made
 
