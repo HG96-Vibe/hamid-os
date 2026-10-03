@@ -9,6 +9,14 @@
   if (c) {
     var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     var W = 0, H = 0, dpr = 1, px = 0, py = 0, target = 0, near = 0, pts = [], LINK = 120, running = false;
+    // Colours come from the theme (light.css sets --dot, --dot-a, --line-a); the dark defaults are below.
+    var DOT = '#a5b4fc', DOT_A = .5, LINE_A = .22;
+    var colours = function () {
+      var st = getComputedStyle(document.documentElement);
+      DOT = st.getPropertyValue('--dot').trim() || '#a5b4fc';
+      DOT_A = parseFloat(st.getPropertyValue('--dot-a')) || .5;
+      LINE_A = parseFloat(st.getPropertyValue('--line-a')) || .22;
+    };
     var seed = function () {
       var n = Math.round(W * H / 11000), i;
       for (i = pts.length; i < n; i++) pts.push({ x: Math.random() * W, y: Math.random() * H, vx: (Math.random() - .5) * .18, vy: (Math.random() - .5) * .18 });
@@ -22,19 +30,19 @@
     };
     var draw = function () {
       c.clearRect(0, 0, W, H);
-      c.fillStyle = c.strokeStyle = '#a5b4fc'; c.lineWidth = 1;
+      c.fillStyle = c.strokeStyle = DOT; c.lineWidth = 1;
       var i, j, a, b, d, reach = LINK * 1.6;
       for (i = 0; i < pts.length; i++) {
         a = pts[i];
         for (j = i + 1; j < pts.length; j++) {
           b = pts[j]; d = Math.sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y));
-          if (d < LINK) { c.globalAlpha = (1 - d / LINK) * .22; c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke(); }
+          if (d < LINK) { c.globalAlpha = (1 - d / LINK) * LINE_A; c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke(); }
         }
         if (near > .01) {
           d = Math.sqrt((a.x - px) * (a.x - px) + (a.y - py) * (a.y - py));
-          if (d < reach) { c.globalAlpha = (1 - d / reach) * .4 * near; c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(px, py); c.stroke(); }
+          if (d < reach) { c.globalAlpha = (1 - d / reach) * LINE_A * 1.8 * near; c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(px, py); c.stroke(); }
         }
-        c.globalAlpha = .5; c.beginPath(); c.arc(a.x, a.y, 1.5, 0, 6.2832); c.fill();
+        c.globalAlpha = DOT_A; c.beginPath(); c.arc(a.x, a.y, 1.5, 0, 6.2832); c.fill();
       }
       c.globalAlpha = 1;
     };
@@ -58,6 +66,8 @@
     window.addEventListener('pointerdown', follow, { passive: true });
     window.addEventListener('pointerup', function (e) { if (e.pointerType !== 'mouse') { target = 0; if (reduced) { near = 0; draw(); } } }, { passive: true });
     document.documentElement.addEventListener('pointerleave', function () { target = 0; if (reduced) { near = 0; draw(); } });
+    window.addEventListener('ds-theme', function () { colours(); if (reduced) draw(); });
+    colours();
     resize();
     document.body.insertBefore(canvas, document.body.firstChild);
     start();

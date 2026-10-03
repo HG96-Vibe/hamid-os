@@ -40,7 +40,8 @@ features can be added without editing the core file. If `window.DS` is missing, 
 | `header.js` | The header: a floating capsule on desktop and a bottom dock on phones. |
 | `brand.js` | Hamid OS branding: the name and motto, the profile strip on Home, the tab title and sign-in screen. |
 | `display.js` | Display size for computers (Auto, 100%, 90%, 80% default, 70%) and the quote banner size on Home (Full, Smaller at 70% default, Compact), set in Settings and saved per device. |
-| `theme.js` | The dot-grid background and heading styling. Loads before `app.js` and does not depend on `window.DS`. |
+| `theme.js` | The "Constellation" background (colours follow the theme) and heading styling. Loads before `app.js` and does not depend on `window.DS`. |
+| `light.js` | Light mode ("Paper"). Dark is the default; the sun / moon button on the Home profile strip switches, saved per device. Loaded in `<head>` so there is no flash of the wrong theme. |
 | `intro.js` | Opening animation (desktop only, skippable). Standalone, does not depend on `window.DS`. |
 | `sw.js` | Service worker. Shows push notifications and opens the right page when one is tapped. |
 
@@ -48,7 +49,8 @@ features can be added without editing the core file. If `window.DS` is missing, 
 
 `styles.css` is the base stylesheet. Each of the others styles the matching feature: `outcomes.css`, `panel.css`
 (side panel), `week.css`, `today.css`, `reports.css`, `home.css`, `account.css`, `header.css`, `intro.css`, `brand.css`,
-`display.css` and `projects.css`. `mobile.css` holds the phone-layout overrides.
+`display.css`, `projects.css` and
+`light.css` (light mode: redefines the colour tokens under `html.light` and keeps the review boxes dark). `mobile.css` holds the phone-layout overrides.
 
 ### Other files
 

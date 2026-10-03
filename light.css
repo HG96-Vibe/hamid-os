@@ -1,0 +1,80 @@
+/* Light mode, "Paper" (light.js switches it on with html.light). Dark stays the default.
+   The page becomes warm off-white with navy text; white cards keep their gold edges; the close-out / month review
+   box and the panel header stay deep indigo as the one bold block. */
+html.light{
+  --text:#1e1b4b;--muted:#4b4f7a;--faint:#7b7fa6;--done:#9a9dc0;
+  --card:#fff;--card-solid:#fff;--soft:rgba(30,27,75,.04);--soft-2:rgba(30,27,75,.08);
+  --line:rgba(30,27,75,.12);--line-soft:rgba(30,27,75,.07);
+  --dark-grad:radial-gradient(800px 420px at 12% 0%,rgba(99,102,241,.10),transparent 60%),linear-gradient(#f6f4ef,#f6f4ef);
+  --shadow:0 10px 30px rgba(60,50,20,.08);
+  --dot:#4338ca;--dot-a:.35;--line-a:.12;
+  --amber:#b45309;
+  color-scheme:light;
+}
+html.light body,html.light canvas.signal-bg{background-color:#f6f4ef}
+
+/* blocks that stay dark: give them back the dark tokens */
+html.light .mr-box,html.light .op-hero,html.light .toast,html.light .timerbar{
+  --text:#eef0ff;--muted:#c3c7ee;--faint:#959bd0;--done:#8287bf;--line:rgba(199,210,254,.16);--line-soft:rgba(199,210,254,.1);
+  --soft:rgba(255,255,255,.05);--soft-2:rgba(255,255,255,.09);--card:rgba(39,35,104,.72);--amber:#fbbf24;color-scheme:dark}
+
+/* text that was hard-coded white on the dark page */
+html.light :is(.brand,.head h1,.title,.btn,.add input.new,.side h2,.section h2,.wingroup h3,.authcard h1,.dlg h2,.carrylist .t,.inbox li p,.kpi b,.card h2,
+  .hm-shape p,.hm-qtext p,.wk-sec,.onew,.rp-btn,.br-name,.pf-streak b,.pj-ghead h2,.dk-item,.td-empty){color:var(--text)}
+html.light :is(.nav button[aria-current="page"],.nav button:hover,.ghost:hover,.arrow:hover,.pill:hover,.side h2 button:hover,.linkish:hover,.rp-back:hover){color:var(--text)}
+html.light :is(.nav button,.arrow,.pill,.linkish,.pf-motto,.br-tag,.hm-next){color:var(--muted)}
+html.light a{color:#4338ca}
+html.light .head h1 em{color:#6366f1}
+@supports (-webkit-text-stroke:2px #000){html.light .head h1 em{color:transparent;-webkit-text-stroke:1.6px #6366f1}}
+html.light .btn:not(.primary):not(.hd-foc):not(.mr-box .btn){background:#fff}
+html.light :is(.btn.primary,.baractions .hd-foc){color:#fff!important}
+html.light .onew::placeholder{color:rgba(180,83,9,.6)}
+html.light .btn.danger{color:#b91c1c}
+
+/* surfaces that were dark-translucent */
+html.light .pf{background:#fff;border-color:var(--line-soft);box-shadow:var(--shadow)}
+html.light .pf-sig{text-shadow:none;color:#d99a0b}
+html.light .pf-av{color:#fff}
+html.light .detail{background:var(--soft)}
+html.light .field{background:#fff}
+html.light select.field option{background:#fff;color:var(--text)}
+html.light .tag{filter:saturate(1.1) brightness(.75);background:rgba(30,27,75,.04)}
+html.light .td-empty{background:var(--soft)}
+html.light dialog{background:#fffdf9;border-color:var(--line-soft);box-shadow:0 30px 70px rgba(60,50,20,.18)}
+html.light dialog::backdrop{background:rgba(30,27,75,.28)}
+html.light .drawer-scrim{background:rgba(30,27,75,.25)}
+html.light .dk-item.on{background:#1e1b4b;color:#fff}
+html.light .rp-btn{background:#fff;border-color:var(--line)}
+
+/* header: white capsule with a navy pill for the current page */
+html.light .bar{background:rgba(255,255,255,.88);border-color:rgba(30,27,75,.10);box-shadow:0 10px 30px rgba(60,50,20,.10)}
+html.light .bar .nav{background:#efede6}
+html.light .bar .nav button{color:#3f4370}
+html.light .bar .nav button:hover{color:#1e1b4b;background:rgba(30,27,75,.06)}
+html.light .bar .nav button[aria-current="page"],html.light .bar .nav button[aria-current="page"]:hover{background:#1e1b4b;color:#fff}
+html.light .baractions .hd-cap{border-color:rgba(30,27,75,.15);color:#3f4370}
+@media (max-width:900px){
+  html.light .bar{background:rgba(255,255,255,.92)}
+  html.light .dock{background:rgba(255,255,255,.95);border-color:rgba(30,27,75,.1);box-shadow:0 14px 34px rgba(60,50,20,.16)}
+  html.light .dk{color:#4b4f7a}
+  html.light .dk[aria-current="page"]{color:var(--amber-3)}
+  html.light .dk-cap{background:#1e1b4b;color:#fff}
+}
+
+/* quote banner on Home: paper instead of night sky */
+html.light .hm-hero.morning{background:radial-gradient(70% 80% at 0% 0%,rgba(99,102,241,.08),transparent 70%),linear-gradient(170deg,#ffffff 0%,#f3efe6 100%);border-color:var(--line-soft);box-shadow:var(--shadow)}
+html.light .hm-hero.morning::after{background:linear-gradient(0deg,rgba(217,119,6,.10),transparent)}
+html.light .hm-hero.evening{background:radial-gradient(60% 70% at 88% 12%,rgba(99,102,241,.10),transparent 60%),linear-gradient(175deg,#fbfaf6 0%,#efecf6 100%);border-color:var(--line-soft);box-shadow:var(--shadow)}
+html.light .hm-hero.evening::before{box-shadow:calc(clamp(64px,10vw,104px) * -.24) calc(clamp(64px,10vw,104px) * .16) 0 0 #818cf8;opacity:.75}
+html.light .hm-hero.evening::after{opacity:0}
+html.light .hm-hello,html.light .hm-quote blockquote{color:#1e1b4b}
+html.light .hm-hero.evening .hm-quote figcaption{color:var(--muted)}
+html.light .hm-qedit{background:rgba(255,255,255,.8);border-color:var(--line);color:#1e1b4b}
+html.light.ds-hero-compact .hm-hero.evening::before{box-shadow:-12px 8px 0 0 #818cf8}
+
+/* sun / moon switch on the Home profile strip */
+.lt-toggle{flex:none;align-self:flex-start;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:var(--soft);color:var(--amber);display:grid;place-items:center;padding:0;cursor:pointer;transition:background .15s,border-color .15s}
+.lt-toggle:hover{border-color:var(--amber);background:var(--soft-2)}
+.lt-toggle:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
+.lt-toggle svg{width:20px;height:20px}
+html.light .lt-toggle{color:#4338ca;background:#f4f2ec}
