@@ -28,6 +28,8 @@
 
     /* task strips */
     const list = el('div', { class: 'td-list' });
+    // Starred (top 3) tasks sit at the top; otherwise the usual order is kept.
+    tasks.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
     tasks.forEach(t => {
       const parent = t.parent_id && weekTitle[t.parent_id];
       const focus = (t.focus_sessions || []).reduce((a, x) => a + (x.minutes || 0), 0);

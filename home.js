@@ -448,6 +448,7 @@
           b.classList.toggle('on', on); b.textContent = on ? '★' : '☆'; b.setAttribute('aria-pressed', String(on));
           b.title = on ? 'In your top 3. Click to remove.' : 'Add to your top 3';
           toast(on ? 'Added to your top 3.' : 'Removed from your top 3.');
+          refresh(); // re-sort Today so starred tasks move to the top
         } }, t.pinned ? '★' : '☆');
       r.append(b);
     }
