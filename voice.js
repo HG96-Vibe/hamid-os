@@ -81,13 +81,57 @@
     return out;
   }
 
+  /* ---------- Kokoro: natural voices that run on this device (kokoro.js, loaded only when picked) ---------- */
+  const KOKORO = [['bf_emma', 'Emma', 'British'], ['bm_george', 'George', 'British'], ['bf_isabella', 'Isabella', 'British'], ['bm_fable', 'Fable', 'British'],
+    ['bm_lewis', 'Lewis', 'British'], ['bf_alice', 'Alice', 'British'], ['bf_lily', 'Lily', 'British'], ['bm_daniel', 'Daniel', 'British'],
+    ['af_heart', 'Heart', 'American'], ['af_bella', 'Bella', 'American']];
+  const kokoroId = () => { const u = store('ds_voice_uri') || ''; return u.startsWith('kokoro:') ? u.slice(7) : null; };
+  const kokoroName = id => (KOKORO.find(k => k[0] === id) || [id, id])[1];
+  let kScript = null;
+  const loadKokoro = () => kScript || (kScript = new Promise((ok, bad) => {
+    if (window.HKokoro) return ok(window.HKokoro);
+    const sc = document.createElement('script'); sc.src = '/kokoro.js?v=1';
+    sc.onload = () => ok(window.HKokoro); sc.onerror = () => { kScript = null; bad(new Error('Couldn’t load the natural voice.')); };
+    document.head.append(sc);
+  }));
+  // One audio element for Kokoro: unlike Web Audio it still plays with the iPhone's ring switch on silent.
+  const KA = typeof Audio !== 'undefined' ? new Audio() : null;
+  const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+
   // iPhone only lets a page speak if the first speech starts straight from a tap; this does that, silently.
   function unlock() {
+    if (KA && kokoroId()) { try { KA.src = SILENT; KA.play().catch(() => {}); } catch (e) {} }
     if (!TTS) return;
     try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; TTS.speak(u); } catch (e) {}
   }
 
+  P.kc = new Map(); P.ktok = 0; P.engine = 'device';
+  function kClear() { P.kc.forEach(pr => pr.then(u => URL.revokeObjectURL(u), () => {})); P.kc = new Map(); }
+  function kGet(i) {
+    if (!P.kc.has(i)) { const pr = window.HKokoro.gen(P.parts[i], P.kvoice).then(r => r.url); pr.catch(() => {}); P.kc.set(i, pr); }
+    return P.kc.get(i);
+  }
+  async function kSpeak() {
+    const tok = ++P.ktok, i = P.i;
+    if (i >= P.parts.length) { finish(); return; }
+    paintBar();
+    let url;
+    try { url = await kGet(i); }
+    catch (e) {
+      if (tok !== P.ktok) return;
+      toast('The natural voice stopped working, so your device voice will read instead.');
+      P.engine = 'device'; speakCurrent(); return;
+    }
+    if (tok !== P.ktok || !P.playing) return;
+    for (let k = 1; k <= 2; k++) if (i + k < P.parts.length) kGet(i + k); // get the next sentences ready while this one plays
+    KA.src = url; KA.playbackRate = rate(); KA.preservesPitch = true;
+    KA.onended = () => { if (tok === P.ktok && P.playing) { P.i++; kSpeak(); } };
+    KA.play().catch(() => { if (tok === P.ktok) { pause(); toast('Tap play to listen.'); } });
+  }
+  function halt() { P.cur = null; P.ktok++; if (TTS) TTS.cancel(); if (KA) KA.pause(); }
+
   function speakCurrent() {
+    if (P.engine === 'kokoro') return kSpeak();
     if (!TTS) return;
     if (P.i >= P.parts.length) { finish(); return; }
     const u = new SpeechSynthesisUtterance(P.parts[P.i]);
@@ -101,25 +145,44 @@
     TTS.speak(u);
     paintBar();
   }
-  function play(text, label) {
-    if (!TTS) { toast('This browser can’t read aloud.'); return; }
+  async function play(text, label) {
+    const kv = KA && kokoroId();
+    if (!TTS && !kv) { toast('This browser can’t read aloud.'); return; }
     const parts = Array.isArray(text) ? text.flatMap(chunk) : chunk(text);
     if (!parts.length) { toast('There’s nothing to read here yet.'); return; }
     stopDictation();
-    P.cur = null; TTS.cancel();
-    Object.assign(P, { parts, i: 0, playing: true, label: label || 'Reading' });
+    halt(); kClear();
+    Object.assign(P, { parts, i: 0, playing: true, label: label || 'Reading', engine: 'device', kvoice: kv });
     showBar();
+    if (kv) {
+      // the natural voice: download it the first time (shown in the bar), then read with it
+      const tok = P.ktok;
+      try {
+        const K = await loadKokoro();
+        if (!K || !K.supported) throw new Error('not supported');
+        if (!K.isReady()) {
+          setNow(K.wasReady() ? 'Getting ' + kokoroName(kv) + '’s voice ready…' : 'Downloading ' + kokoroName(kv) + '’s voice (once only)…');
+          await K.load((loaded, total) => { if (total && P.ktok === tok) setNow(`Downloading ${kokoroName(kv)}’s voice (once only)… ${Math.min(100, Math.round(loaded / total * 100))}%`); });
+        }
+        if (P.ktok !== tok || !P.playing) return;
+        P.engine = 'kokoro';
+      } catch (e) {
+        if (P.ktok !== tok) return;
+        toast('The natural voice couldn’t load, so your device voice will read instead.');
+      }
+    }
     speakCurrent();
     // Chrome on computers stops speaking after ~15s unless nudged
     clearInterval(P.keepAlive);
     if (!isApple) P.keepAlive = setInterval(() => { if (P.playing && TTS.speaking && !TTS.paused) { TTS.pause(); TTS.resume(); } }, 10000);
   }
   // Pausing restarts the current sentence on resume: pause / resume in phone browsers is unreliable.
-  function pause() { P.playing = false; P.cur = null; TTS && TTS.cancel(); paintBar(); }
+  function pause() { P.playing = false; halt(); paintBar(); }
   function resume() { if (P.i >= P.parts.length) P.i = 0; P.playing = true; speakCurrent(); }
-  function skip(n) { P.i = Math.max(0, Math.min(P.parts.length - 1, P.i + n)); P.cur = null; TTS.cancel(); if (P.playing) speakCurrent(); else paintBar(); }
-  function stop() { P.playing = false; P.cur = null; clearInterval(P.keepAlive); TTS && TTS.cancel(); P.bar && P.bar.remove(); P.bar = null; document.body.classList.remove('vx-playing'); }
+  function skip(n) { P.i = Math.max(0, Math.min(P.parts.length - 1, P.i + n)); halt(); if (P.playing) speakCurrent(); else paintBar(); }
+  function stop() { P.playing = false; halt(); kClear(); clearInterval(P.keepAlive); P.bar && P.bar.remove(); P.bar = null; document.body.classList.remove('vx-playing'); }
   function finish() { P.playing = false; P.cur = null; clearInterval(P.keepAlive); paintBar(true); setTimeout(() => { if (!P.playing) stop(); }, 2500); }
+  function setNow(t) { const n = P.bar && P.bar.querySelector('.vx-now'); if (n) n.textContent = t; }
 
   function showBar() {
     if (P.bar && P.bar.isConnected) return paintBar();
@@ -132,7 +195,8 @@
         b('vx-fwd', 'Next sentence', 'fwd', () => skip(1)),
         el('button', { type: 'button', class: 'vx-rate', 'aria-label': 'Reading speed', title: 'Reading speed', onclick: () => {
           const r = rate(), next = RATES[(RATES.findIndex(x => x >= r - 0.001) + 1) % RATES.length];
-          store('ds_voice_rate', String(next)); paintBar(); if (P.playing) { P.cur = null; TTS.cancel(); speakCurrent(); }
+          store('ds_voice_rate', String(next)); paintBar();
+          if (P.engine === 'kokoro') { if (KA) KA.playbackRate = next; } else if (P.playing) { halt(); speakCurrent(); }
         } }),
         b('vx-x', 'Stop reading', 'close', stop)),
       el('div', { class: 'vx-prog' }, el('i')));
@@ -419,13 +483,17 @@
     langSel.value = lang();
     const voiceSel = el('select', { class: 'field vx-sel', 'aria-label': 'Reading voice', onchange: () => { store('ds_voice_uri', voiceSel.value); fillVoices(); } });
     const found = el('p', { class: 'meta vx-tip' });
+    const kNote = el('p', { class: 'meta vx-tip vx-knote', hidden: true }, 'Natural voices run on this device, for free and in private. The first time you listen it downloads about 90 MB, then it’s kept. It takes a moment to start, and if it ever fails your device voice reads instead.');
     const rank = v => (quality(v) === 'Premium' ? 0 : quality(v) === 'Enhanced' ? 1 : 2);
     const fillVoices = () => {
       const vs = englishVoices().slice().sort((a, b) => (/^en[-_]GB/i.test(b.lang) - /^en[-_]GB/i.test(a.lang)) || rank(a) - rank(b) || a.name.localeCompare(b.name));
       const best = bestVoice(), auto = !store('ds_voice_uri') || !vs.some(v => vid(v) === store('ds_voice_uri'));
-      voiceSel.replaceChildren(el('option', { value: '' }, 'Automatic' + (best && auto ? ` (${vlabel(best)})` : '')),
-        ...vs.map(v => el('option', { value: vid(v) }, `${vlabel(v)} · ${v.lang.replace('_', '-')}`)));
-      voiceSel.value = auto ? '' : store('ds_voice_uri');
+      const kv = kokoroId();
+      voiceSel.replaceChildren(el('option', { value: '' }, 'Automatic' + (best && auto && !kv ? ` (${vlabel(best)})` : '')),
+        KA ? el('optgroup', { label: 'Natural voices (Kokoro, downloads once)' }, KOKORO.map(([id, name, acc]) => el('option', { value: 'kokoro:' + id }, `${name} · ${acc}`))) : null,
+        el('optgroup', { label: 'Built into this device' }, vs.map(v => el('option', { value: vid(v) }, `${vlabel(v)} · ${v.lang.replace('_', '-')}`))));
+      voiceSel.value = kv ? 'kokoro:' + kv : auto ? '' : store('ds_voice_uri');
+      kNote.hidden = !kv;
       const good = vs.filter(v => quality(v)).length;
       found.textContent = `This device offers ${vs.length} English voice${vs.length === 1 ? '' : 's'}` + (good ? `, ${good} of them Enhanced or Premium.` : ', none of them Enhanced or Premium.')
         + (isApple && !good ? ' If you have downloaded Enhanced voices and they don’t show here, iOS isn’t sharing them with web apps on this version.' : '');
@@ -444,7 +512,8 @@
       SR ? el('p', { class: 'meta vx-tip' }, 'Say “comma”, “full stop”, “question mark”, “new line” or “new paragraph” for punctuation. Tap the mic again to stop.') : null,
       el('h3', { class: 'vx-h' }, 'Listening'),
       TTS ? [
-        el('label', { class: 'pj-lbl vx-row' }, el('span', { class: 'lbl' }, 'Voice'), voiceSel), found,
+        el('label', { class: 'pj-lbl vx-row' }, el('span', { class: 'lbl' }, 'Voice'), voiceSel), kNote, found,
+        el('p', { class: 'meta vx-tip' }, el('a', { href: '/voice-lab.html' }, 'Compare the voices in the Voice lab →'), ' Hear each one and see how fast it is on this device.'),
         el('div', { class: 'ds-row vx-row' }, el('span', { class: 'lbl', style: 'margin:0' }, 'Speed'), speed, out),
         el('div', { class: 'ds-row' }, el('button', { type: 'button', class: 'btn', onclick: () => { unlock(); play('Good morning, Hamid. This is how your day and your documents will sound.', 'Voice test'); } }, 'Test the voice')),
         isApple ? el('p', { class: 'meta vx-tip' }, 'For a more natural voice on iPhone: Settings → Accessibility → Read & Speak (or Spoken Content) → Voices → English, and download an “Enhanced” or “Premium” voice such as Daniel or Serena. Then pick it here.') : null
