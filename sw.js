@@ -1,5 +1,20 @@
+// Keeps a copy of the app on this device so it can open with no internet (it then shows the music saved here).
+// Network first: online you always get the latest version; the saved copy is only used when the network fails.
+const SHELL = 'hos-shell-v1';
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
+self.addEventListener('fetch', e => {
+  const r = e.request;
+  if (r.method !== 'GET') return;
+  const u = new URL(r.url);
+  const own = u.origin === self.location.origin && u.pathname !== '/sw.js' && !u.pathname.startsWith('/__listen-audio/');
+  const lib = u.hostname === 'cdn.jsdelivr.net' && u.pathname.startsWith('/npm/@supabase/');
+  if (!own && !lib) return;
+  e.respondWith(fetch(r).then(res => {
+    if (res.ok && (res.type === 'basic' || res.type === 'cors')) { const copy = res.clone(); e.waitUntil(caches.open(SHELL).then(c => c.put(r, copy)).catch(() => {})); }
+    return res;
+  }).catch(async () => (await caches.match(r)) || (r.mode === 'navigate' ? (await caches.match('/')) : null) || Response.error()));
+});
 self.addEventListener('push', e => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch (err) { d = { body: e.data ? e.data.text() : '' }; }

@@ -1,4 +1,5 @@
-// Listen tab: YouTube videos and playlists to play while you work (long mixes, lo-fi, ambient).
+// Listen tab: YouTube videos and playlists to play while you work (long mixes, lo-fi, ambient), and your own
+// music files: uploaded once to private storage, then kept on each Mac so they play with no internet.
 // The player lives outside the page, at the bottom left, so the music
 // keeps going while you move around the app. Long mixes resume where you left them. Focus blocks can start your
 // focus music and fade it out when they end, and there is a sleep timer.
@@ -32,7 +33,9 @@
     plus: '<path d="M12 5v14M5 12h14"/>',
     down: '<path d="m6 9 6 6 6-6"/>',
     up: '<path d="m6 15 6-6 6 6"/>',
-    list: '<path d="M9 6h12M9 12h12M9 18h12"/><path d="m3 5 3 2-3 2zM3 15l3 2-3 2z" fill="currentColor"/>'
+    list: '<path d="M9 6h12M9 12h12M9 18h12"/><path d="m3 5 3 2-3 2zM3 15l3 2-3 2z" fill="currentColor"/>',
+    note: '<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>',
+    upload: '<path d="M12 16V4M6 10l6-6 6 6M4 20h16"/>'
   };
   function icon(name, size = 18) {
     const s = document.createElement('span');
@@ -47,13 +50,76 @@
      ===================================================================== */
   const L = { items: [], loaded: false, loading: null, cat: store('ls_cat') || 'All', search: '' };
   async function load() {
-    L.items = await q(sb.from('listen_items').select('*').order('position').order('created_at'));
-    L.loaded = true;
+    const rows = await q(sb.from('listen_items').select('*').order('position').order('created_at'));
+    await offScan(); // which of your tracks are saved on this Mac (before anything is drawn)
+    L.items = rows; L.loaded = true;
+    keepList();
   }
   const ensure = () => (L.loaded ? Promise.resolve() : (L.loading = L.loading || load().finally(() => { L.loading = null; })));
   const byId = id => L.items.find(x => x.id === id) || null;
   const cats = () => { const s = new Set(DEFAULT_CATS); L.items.forEach(x => s.add(x.category)); return [...s]; };
-  async function patch(it, row) { Object.assign(it, row); await q(sb.from('listen_items').update(row).eq('id', it.id)); }
+  async function patch(it, row) {
+    Object.assign(it, row);
+    if (navigator.onLine === false) { keepList(); return; } // offline: keep it on this Mac only
+    await q(sb.from('listen_items').update(row).eq('id', it.id));
+  }
+
+  /* ---------- your own music: private storage in the cloud, plus a copy on this Mac for offline ---------- */
+  const BUCKET = 'listen-audio', MAX_BYTES = 50 * 1024 * 1024; // the free plan's limit per file
+  const AUDIO_EXT = { mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/opus', wav: 'audio/wav', flac: 'audio/flac', webm: 'audio/webm' };
+  const ALLOWED = new Set(['audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/x-m4a', 'audio/aac', 'audio/ogg', 'audio/opus', 'audio/wav', 'audio/x-wav', 'audio/wave', 'audio/flac', 'audio/x-flac', 'audio/webm']);
+  const isAudio = it => !!it && it.kind === 'audio';
+  const mb = n => (n / 1048576).toFixed(n < 10485760 ? 1 : 0) + ' MB';
+  const OFF = { cache: null, ids: new Set() };
+  const offKey = id => location.origin + '/__listen-audio/' + id;
+  async function offCache() {
+    if (!OFF.cache && window.caches) { try { OFF.cache = await caches.open('ls-audio-v1'); } catch (e) { OFF.cache = null; } }
+    return OFF.cache;
+  }
+  async function offScan() {
+    const c = await offCache(); if (!c) return;
+    try { OFF.ids = new Set((await c.keys()).map(r => decodeURIComponent(r.url.split('/__listen-audio/')[1] || ''))); } catch (e) {}
+  }
+  async function offSave(it, blob) {
+    const c = await offCache(); if (!c) return false;
+    try {
+      await c.put(offKey(it.id), new Response(blob, { headers: { 'Content-Type': it.audio_type || blob.type || 'audio/mpeg' } }));
+      OFF.ids.add(it.id); keepList();
+      if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); // ask the browser not to clear it
+      return true;
+    } catch (e) { return false; }
+  }
+  async function offDrop(id) { const c = await offCache(); if (c) { try { await c.delete(offKey(id)); } catch (e) {} } OFF.ids.delete(id); keepList(); }
+  async function offBlob(it) { const c = await offCache(); if (!c) return null; try { const r = await c.match(offKey(it.id)); return r ? await r.blob() : null; } catch (e) { return null; } }
+  // the names of the tracks saved on this Mac, so they can be listed with no internet
+  function keepList() {
+    if (!L.loaded) return;
+    store('ls_offline_list', JSON.stringify(L.items.filter(x => isAudio(x) && OFF.ids.has(x.id))
+      .map(x => ({ id: x.id, kind: 'audio', title: x.title, category: x.category, duration: x.duration, audio_type: x.audio_type, last_seconds: x.last_seconds }))));
+  }
+  async function fetchAudio(it, onPct) {
+    const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(it.audio_path, 600);
+    if (error || !data) throw new Error('Couldn’t reach your music. Check the connection.');
+    const res = await fetch(data.signedUrl);
+    if (!res.ok || !res.body) throw new Error('Couldn’t download this track. Try again.');
+    const total = +res.headers.get('Content-Length') || it.audio_size || 0, reader = res.body.getReader(), parts = [];
+    let got = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parts.push(value); got += value.length;
+      if (total && onPct) onPct(Math.min(99, Math.round(got / total * 100)));
+    }
+    return new Blob(parts, { type: it.audio_type || 'audio/mpeg' });
+  }
+  // the offline badge on each of your tracks, updated in place
+  function markTiles() {
+    document.querySelectorAll('.ls-tile[data-id] .ls-offb').forEach(b => {
+      const on = OFF.ids.has(b.closest('.ls-tile').dataset.id);
+      b.classList.toggle('on', on); b.textContent = on ? 'On this Mac' : 'In the cloud';
+      b.title = on ? 'Saved on this Mac: plays with no internet' : 'Plays online; saved on this Mac the first time you play it';
+    });
+  }
 
   // Any kind of YouTube link: watch?v=, youtu.be, shorts, live, embed, music.youtube, or a playlist.
   function parseYT(raw) {
@@ -84,6 +150,24 @@
      ===================================================================== */
   const P = { item: null, yt: null, playing: false, ended: false, loop: store('ls_loop') === '1', shuffleCat: null, byFocus: false,
     volume: Math.max(0, Math.min(100, Number(store('ls_volume') || 70))), big: false, min: store('ls_min') === '1', sleepAt: 0, sleepFocus: false, saveTimer: null, duck: false, error: null };
+  const ST = { ENDED: 0, PLAYING: 1, PAUSED: 2 }; // the same numbers YouTube uses
+  // Your music plays through an <audio> element wrapped to look like the YouTube player, so pause, volume, the
+  // sleep timer, focus blocks and read-aloud ducking all work the same.
+  function audioPlayer(url, start, on) {
+    const a = new Audio(); a.preload = 'auto'; a.src = url;
+    let st = -1;
+    const set = x => { st = x; on.state(x); };
+    a.addEventListener('playing', () => set(ST.PLAYING));
+    a.addEventListener('pause', () => { if (!a.ended) set(ST.PAUSED); });
+    a.addEventListener('ended', () => set(ST.ENDED));
+    a.addEventListener('error', () => on.error());
+    a.addEventListener('timeupdate', () => on.time(a.currentTime, a.duration));
+    if (start) a.addEventListener('loadedmetadata', () => { try { a.currentTime = start; } catch (e) {} }, { once: true });
+    return { audio: a, getPlayerState: () => st, getCurrentTime: () => a.currentTime || 0, getDuration: () => (isFinite(a.duration) ? a.duration : 0),
+      playVideo: () => { const pr = a.play(); if (pr && pr.catch) pr.catch(() => set(ST.PAUSED)); }, pauseVideo: () => a.pause(),
+      seekTo: t => { a.currentTime = t; }, setVolume: v => { a.volume = Math.max(0, Math.min(1, v / 100)); },
+      destroy: () => { a.pause(); a.removeAttribute('src'); a.load(); URL.revokeObjectURL(url); } };
+  }
   let api = null;
   const loadApi = () => api || (api = new Promise((ok, bad) => {
     if (window.YT && window.YT.Player) return ok(window.YT);
@@ -142,7 +226,8 @@
     const mini = card.querySelector('.ls-mini');
     mini.replaceChildren(icon(P.min ? 'up' : 'down', 17)); mini.title = P.min ? 'Show the player' : 'Minimise'; mini.setAttribute('aria-label', mini.title);
     document.body.classList.toggle('ls-big', P.big);
-    card.querySelector('.ls-title').textContent = it ? (it.title || 'YouTube') : '';
+    card.querySelector('.ls-title').textContent = it ? (it.title || (isAudio(it) ? 'Your music' : 'YouTube')) : '';
+    card.classList.toggle('audio', isAudio(it));
     const bits = [it && it.category];
     if (P.byFocus) bits.push('focus music');
     if (P.shuffleCat) bits.push('shuffling ' + P.shuffleCat);
@@ -157,8 +242,8 @@
     card.querySelector('.ls-sleep').classList.toggle('on', !!(P.sleepAt || P.sleepFocus));
     const err = card.querySelector('.ls-err');
     err.hidden = !P.error;
-    if (P.error && it) err.replaceChildren(el('p', {}, P.error), el('a', { class: 'btn', href: watchUrl(it), target: '_blank', rel: 'noopener noreferrer' }, 'Open on YouTube'));
-    document.querySelectorAll('.ls-tile').forEach(t => t.classList.toggle('playing', !!it && t.dataset.id === it.id));
+    if (P.error && it) err.replaceChildren(el('p', {}, P.error), isAudio(it) ? null : el('a', { class: 'btn', href: watchUrl(it), target: '_blank', rel: 'noopener noreferrer' }, 'Open on YouTube'));
+    document.querySelectorAll('.ls-tile, .ls-otrack').forEach(t => t.classList.toggle('playing', !!it && t.dataset.id === it.id));
   }
   function setBig(on) { P.big = on; if (on) P.min = false; paintCard(); }
   // Minimised: just a slim bar with play / pause, the title, next, show and close. The video keeps playing, unseen.
@@ -172,6 +257,7 @@
     if (it.category === WATCH && opts.big !== false) P.big = true;
     buildCard(); paintCard();
     saveProgress(); // the one we are leaving
+    if (isAudio(it)) return playAudio(it, fromStart);
     let YT;
     try { YT = await loadApi(); } catch (e) { P.error = e.message; paintCard(); return; }
     if (P.item !== it) return;
@@ -196,18 +282,47 @@
     // (the page itself isn't redrawn: only the playing card's highlight moves, so nothing jumps)
     patch(it, { plays: (it.plays || 0) + 1, last_played_at: new Date().toISOString() }).catch(() => {});
   }
+  async function playAudio(it, fromStart) {
+    if (P.yt) { try { P.yt.destroy(); } catch (e) {} P.yt = null; }
+    P.playing = false;
+    const seek = el('input', { type: 'range', class: 'ls-seek', min: '0', max: '1000', value: '0', 'aria-label': 'Position in the track',
+      oninput: () => { const d = P.yt && P.yt.getDuration(); if (d) P.yt.seekTo(seek.value / 1000 * d); } });
+    const tm = el('span', { class: 'ls-tm' }), status = el('span', { class: 'ls-astat' });
+    card.querySelector('.ls-frame').replaceChildren(el('div', { class: 'ls-art' }, icon('note', 34), status, el('div', { class: 'ls-seekw' }, seek, tm)));
+    let blob = await offBlob(it);
+    if (P.item !== it) return;
+    if (!blob) {
+      if (navigator.onLine === false) { P.error = 'This track isn’t saved on this Mac yet. Play it once while you’re online.'; paintCard(); return; }
+      status.textContent = 'Downloading…';
+      try { blob = await fetchAudio(it, pct => { status.textContent = `Downloading ${pct}%`; }); }
+      catch (e) { if (P.item === it) { P.error = e.message; paintCard(); } return; }
+      if (P.item !== it) return;
+      offSave(it, blob).then(ok => { if (ok) markTiles(); });
+    }
+    status.textContent = '';
+    const start = !fromStart && it.duration > 0 && it.last_seconds > 30 && it.last_seconds < it.duration - 30 ? Math.floor(it.last_seconds) : 0;
+    P.yt = audioPlayer(URL.createObjectURL(blob), start, {
+      state: x => onState(it, x),
+      error: () => { if (P.item !== it) return; P.error = 'This file can’t play here. Try saving it as an MP3.'; P.playing = false; paintCard(); },
+      time: (t, d) => {
+        const ok = d && isFinite(d);
+        if (ok && document.activeElement !== seek) seek.value = String(Math.round(t / d * 1000));
+        tm.textContent = fmtTime(t) + (ok ? ' / ' + fmtTime(d) : '');
+      } });
+    applyVolume(); P.yt.playVideo();
+    patch(it, { plays: (it.plays || 0) + 1, last_played_at: new Date().toISOString() }).catch(() => {});
+  }
   function onState(it, s) {
     if (P.item !== it) return;
-    const YT = window.YT;
-    if (s === YT.PlayerState.PLAYING) {
+    if (s === ST.PLAYING) {
       P.playing = true; P.ended = false;
       const d = P.yt.getDuration && P.yt.getDuration();
       if (d && Math.abs(d - (it.duration || 0)) > 2) patch(it, { duration: d }).catch(() => {});
       clearInterval(P.saveTimer); P.saveTimer = setInterval(saveProgress, 20000);
-    } else if (s === YT.PlayerState.PAUSED) { P.playing = false; saveProgress(); clearInterval(P.saveTimer); }
-    else if (s === YT.PlayerState.ENDED) {
+    } else if (s === ST.PAUSED) { P.playing = false; saveProgress(); clearInterval(P.saveTimer); }
+    else if (s === ST.ENDED) {
       P.playing = false; clearInterval(P.saveTimer);
-      if (it.kind === 'video') patch(it, { last_seconds: 0 }).catch(() => {});
+      if (it.kind !== 'playlist') patch(it, { last_seconds: 0 }).catch(() => {});
       if (P.loop) { try { P.yt.seekTo(0, true); P.yt.playVideo(); } catch (e) {} return; }
       if (P.shuffleCat) { shuffleNext(); return; }
       P.ended = true;
@@ -313,21 +428,26 @@
   let pageEl = null;
   function tile(it) {
     const playing = P.item && P.item.id === it.id;
-    const resume = it.kind === 'video' && it.duration > 0 && it.last_seconds > 30 && it.last_seconds < it.duration - 30;
+    const resume = it.kind !== 'playlist' && it.duration > 0 && it.last_seconds > 30 && it.last_seconds < it.duration - 30;
+    const audio = isAudio(it), saved = audio && OFF.ids.has(it.id);
     const menu = el('div', { class: 'ls-menu', hidden: true, role: 'menu' },
       el('button', { type: 'button', role: 'menuitem', onclick: () => moveDialog(it) }, 'Move to another category…'),
       resume ? el('button', { type: 'button', role: 'menuitem', onclick: () => play(it, { fromStart: true }) }, 'Play from the start') : null,
-      el('a', { role: 'menuitem', href: watchUrl(it), target: '_blank', rel: 'noopener noreferrer' }, 'Open on YouTube'),
-      el('button', { type: 'button', role: 'menuitem', class: 'danger', onclick: () => remove(it) }, it.category === WATCH ? 'Watched — remove' : 'Remove'));
+      audio ? el('button', { type: 'button', role: 'menuitem', onclick: () => rename(it) }, 'Rename…') : null,
+      audio ? el('button', { type: 'button', role: 'menuitem', onclick: () => (OFF.ids.has(it.id) ? dropOffline(it) : saveOffline(it)) }, saved ? 'Remove from this Mac (keep in the cloud)' : 'Save on this Mac') : null,
+      audio ? null : el('a', { role: 'menuitem', href: watchUrl(it), target: '_blank', rel: 'noopener noreferrer' }, 'Open on YouTube'),
+      el('button', { type: 'button', role: 'menuitem', class: 'danger', onclick: () => remove(it) }, audio ? 'Delete' : it.category === WATCH ? 'Watched — remove' : 'Remove'));
     const t = el('article', { class: 'ls-tile' + (playing ? ' playing' : ''), 'data-id': it.id },
-      el('button', { type: 'button', class: 'ls-thumb', 'aria-label': 'Play ' + (it.title || 'video'), onclick: () => play(it, { shuffleCat: null }) },
-        thumbOf(it) ? el('img', { src: thumbOf(it), alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' }) : el('span', { class: 'ls-noimg' }, icon('list', 30)),
+      el('button', { type: 'button', class: 'ls-thumb', 'aria-label': 'Play ' + (it.title || (audio ? 'track' : 'video')), onclick: () => play(it, { shuffleCat: null }) },
+        audio ? el('span', { class: 'ls-noimg ls-audioart' }, icon('note', 34))
+          : thumbOf(it) ? el('img', { src: thumbOf(it), alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' }) : el('span', { class: 'ls-noimg' }, icon('list', 30)),
         el('span', { class: 'ls-playover', 'aria-hidden': 'true' }, icon('play', 26)),
         it.kind === 'playlist' ? el('span', { class: 'ls-badge' }, icon('list', 13), 'Playlist') : null,
-        resume ? el('span', { class: 'ls-badge ls-resume' }, 'Resume ' + fmtTime(it.last_seconds)) : it.kind === 'video' && it.duration > 0 ? el('span', { class: 'ls-badge ls-dur' }, fmtTime(it.duration)) : null),
+        audio ? el('span', { class: 'ls-badge ls-offb' + (saved ? ' on' : ''), title: saved ? 'Saved on this Mac: plays with no internet' : 'Plays online; saved on this Mac the first time you play it' }, saved ? 'On this Mac' : 'In the cloud') : null,
+        resume ? el('span', { class: 'ls-badge ls-resume' }, 'Resume ' + fmtTime(it.last_seconds)) : it.kind !== 'playlist' && it.duration > 0 ? el('span', { class: 'ls-badge ls-dur' }, fmtTime(it.duration)) : null),
       el('div', { class: 'ls-tbody' },
-        el('h3', { title: it.title || '' }, it.title || 'YouTube video'),
-        el('p', {}, [it.channel, it.plays ? `played ${it.plays}×` : null].filter(Boolean).join(' · ')),
+        el('h3', { title: it.title || '' }, it.title || (audio ? 'Your music' : 'YouTube video')),
+        el('p', {}, [audio ? 'Your music' : it.channel, it.plays ? `played ${it.plays}×` : null].filter(Boolean).join(' · ')),
         el('div', { class: 'ls-tacts' },
           el('button', { type: 'button', class: 'ls-ic' + (it.favourite ? ' fav' : ''), title: it.favourite ? 'Remove from favourites' : 'Add to favourites', 'aria-pressed': String(it.favourite),
             onclick: async () => { await patch(it, { favourite: !it.favourite }); drawPage(); } }, icon('star', 16)),
@@ -339,11 +459,96 @@
   document.addEventListener('click', e => { if (!e.target.closest('.ls-tile .ls-mw')) document.querySelectorAll('.ls-tile .ls-menu').forEach(m => { m.hidden = true; }); });
 
   async function remove(it) {
-    if (!confirm(`Remove “${it.title || 'this video'}” from Listen?`)) return;
-    await q(sb.from('listen_items').delete().eq('id', it.id));
-    L.items = L.items.filter(x => x !== it);
+    const audio = isAudio(it);
+    if (!confirm(audio ? `Delete “${it.title || 'this track'}”? The file is removed from the cloud and from this Mac.` : `Remove “${it.title || 'this video'}” from Listen?`)) return;
     if (P.item === it) closePlayer();
-    toast('Removed.'); drawPage();
+    if (audio) { await q(sb.storage.from(BUCKET).remove([it.audio_path])); await offDrop(it.id); }
+    await q(sb.from('listen_items').delete().eq('id', it.id));
+    L.items = L.items.filter(x => x !== it); keepList();
+    toast(audio ? 'Deleted.' : 'Removed.'); drawPage();
+  }
+  async function rename(it) {
+    const n = (prompt('Rename this track', it.title || '') || '').trim().slice(0, 300);
+    if (!n || n === it.title) return;
+    await patch(it, { title: n }); keepList(); drawPage();
+  }
+  async function saveOffline(it) {
+    if (navigator.onLine === false) return toast('Connect to the internet to save it on this Mac.');
+    toast('Saving on this Mac…');
+    try { await offSave(it, await fetchAudio(it)); toast('Saved on this Mac. It plays with no internet.'); markTiles(); drawPage(); }
+    catch (e) { toast(e.message); }
+  }
+  async function dropOffline(it) {
+    await offDrop(it.id); markTiles(); drawPage();
+    toast('Removed from this Mac. It’s still in the cloud.');
+  }
+
+  /* ---------- upload your own music ---------- */
+  const cleanTitle = name => name.replace(/\.[a-z0-9]{2,5}$/i, '').replace(/[_]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300) || 'Untitled';
+  function audioLength(file) {
+    return new Promise(ok => {
+      const a = new Audio(), url = URL.createObjectURL(file);
+      const done = d => { URL.revokeObjectURL(url); ok(d && isFinite(d) ? Math.round(d) : 0); };
+      a.preload = 'metadata'; a.onloadedmetadata = () => done(a.duration); a.onerror = () => done(0);
+      setTimeout(() => done(0), 8000); a.src = url;
+    });
+  }
+  function uploadDialog() {
+    const dlg = el('dialog', { class: 'ls-dlg', 'aria-label': 'Upload music' });
+    const file = el('input', { type: 'file', id: 'ls-file', class: 'ls-file', multiple: true, accept: 'audio/*,.mp3,.m4a,.aac,.ogg,.oga,.opus,.wav,.flac,.webm' });
+    const list = el('ul', { class: 'ls-ulist' });
+    const sel = catSelect(L.cat !== 'All' && L.cat !== 'Favourites' && L.cat !== 'Recent' ? L.cat : 'Focus');
+    const focusBox = el('input', { type: 'checkbox', id: 'ls-upfocus' });
+    const go = el('button', { class: 'btn primary', type: 'submit', disabled: true }, 'Upload');
+    const used = L.items.filter(isAudio).reduce((n, x) => n + (x.audio_size || 0), 0);
+    let picked = [];
+    file.addEventListener('change', () => {
+      picked = [...file.files].map(f => {
+        const ext = (f.name.split('.').pop() || '').toLowerCase();
+        const type = AUDIO_EXT[ext] ? (ALLOWED.has(f.type) ? f.type : AUDIO_EXT[ext]) : null;
+        const err = !type ? 'Not a music file this app can play. Use MP3, M4A, WAV, FLAC or OGG.'
+          : f.size > MAX_BYTES ? `Too big (${mb(f.size)}). The limit is 50 MB a file: save it at 96 kbps or split it in two.` : null;
+        return { f, ext, type, err, li: el('li', { class: err ? 'bad' : '' }, el('b', {}, cleanTitle(f.name)), el('small', {}, err || mb(f.size))) };
+      });
+      list.replaceChildren(...picked.map(p => p.li));
+      go.disabled = !picked.some(p => !p.err);
+    });
+    const form = el('form', { class: 'dlg', onsubmit: async e => {
+      e.preventDefault();
+      const good = picked.filter(p => !p.err); if (!good.length) return;
+      const c = await catValue(sel); if (!c) return;
+      go.disabled = true; file.disabled = true;
+      let added = 0;
+      for (const p of good) {
+        const note = p.li.querySelector('small');
+        note.textContent = 'Uploading…';
+        const path = `${DS.uid()}/${crypto.randomUUID()}.${p.ext}`;
+        try {
+          const duration = await audioLength(p.f);
+          const up = await sb.storage.from(BUCKET).upload(path, p.f, { contentType: p.type, upsert: false });
+          if (up.error) throw up.error;
+          let row;
+          try {
+            row = await q(sb.from('listen_items').insert({ user_id: DS.uid(), kind: 'audio', youtube_id: null, audio_path: path, audio_size: p.f.size, audio_type: p.type,
+              title: cleanTitle(p.f.name), category: c, focus: focusBox.checked, duration, position: Date.now() / 1000 }).select().single());
+          } catch (er) { sb.storage.from(BUCKET).remove([path]).catch(() => {}); throw er; }
+          L.items.push(row);
+          const kept = await offSave(row, p.f); // you already have the file here, so it's saved on this Mac straight away
+          note.textContent = kept ? 'Added · saved on this Mac' : 'Added'; p.li.classList.add('ok'); added++;
+        } catch (er) { note.textContent = 'Couldn’t upload: ' + (er.message || 'try again'); p.li.classList.add('bad'); }
+      }
+      file.disabled = false; file.value = ''; picked = [];
+      if (added) { toast(added === 1 ? `Added to ${c}.` : `${added} tracks added to ${c}.`); drawPage(); }
+    } },
+      el('h2', {}, 'Upload music'),
+      el('p', { class: 'meta', style: 'margin:-8px 0 0' }, `MP3, M4A, WAV, FLAC or OGG, up to 50 MB each (about 50 minutes at normal quality). Stored privately; each track is kept on this Mac so it plays with no internet. ${mb(used)} of 1 GB used.`),
+      el('label', { class: 'ls-filebtn', for: 'ls-file' }, icon('upload', 16), ' Choose files'), file, list,
+      el('label', { class: 'pj-lbl' }, el('span', { class: 'lbl' }, 'Category'), sel),
+      el('label', { class: 'ls-check', for: 'ls-upfocus' }, focusBox, el('span', {}, 'Play these during focus blocks')),
+      el('div', { class: 'actions' }, go, el('button', { class: 'btn', type: 'button', onclick: () => dlg.close() }, 'Done')));
+    dlg.append(form);
+    dlg.addEventListener('close', () => dlg.remove());
+    document.body.append(dlg); dlg.showModal();
   }
   function moveDialog(it) {
     const dlg = el('dialog', { class: 'ls-dlg', 'aria-label': 'Move' });
@@ -450,8 +655,9 @@
     let body;
     if (!L.items.length) {
       body = el('div', { class: 'ls-start' }, el('h2', {}, 'Your music, one tap away'),
-        el('p', {}, 'Add the long mixes and playlists you play while you work: lo-fi, ambient, rain, piano. Paste a YouTube link and it appears here with its picture. Tap to play; it keeps playing while you use the rest of the app.'),
-        el('button', { type: 'button', class: 'btn primary', onclick: addDialog }, '+ Add your first video'));
+        el('p', {}, 'Add the long mixes and playlists you play while you work: lo-fi, ambient, rain, piano. Paste a YouTube link and it appears here with its picture, or upload your own music files to play with no internet. Tap to play; it keeps playing while you use the rest of the app.'),
+        el('div', { class: 'ls-startb' }, el('button', { type: 'button', class: 'btn primary', onclick: addDialog }, '+ Add your first video'),
+          el('button', { type: 'button', class: 'btn', onclick: uploadDialog }, icon('upload', 16), ' Upload music')));
     } else if (L.cat === 'All') {
       const favs = items.filter(x => x.favourite);
       const recent = items.filter(x => x.last_played_at).sort((a, b) => (b.last_played_at > a.last_played_at ? 1 : -1)).slice(0, RECENT_MAX);
@@ -459,7 +665,7 @@
         ...cats().map(c => sec(c, items.filter(x => x.category === c), { cat: c, max: ROW_MAX, go: c }))];
     } else if (L.cat === 'Favourites') body = sec('Favourites', items.filter(x => x.favourite), { cat: 'Favourites', always: true, empty: 'Tap the star on anything to keep it here.' });
     else if (L.cat === 'Recent') body = sec('Recently played', items.filter(x => x.last_played_at).sort((a, b) => (b.last_played_at > a.last_played_at ? 1 : -1)).slice(0, RECENT_MAX), { always: true, empty: 'Nothing played yet.' });
-    else body = sec(L.cat, items.filter(x => x.category === L.cat), { cat: L.cat, always: true, empty: `Nothing in ${L.cat} yet. Add a video and pick ${L.cat}.` });
+    else body = sec(L.cat, items.filter(x => x.category === L.cat), { cat: L.cat, always: true, empty: `Nothing in ${L.cat} yet. Add a video or upload music and pick ${L.cat}.` });
     pageEl.querySelector('.ls-chips').replaceChildren(...chips.map(c => el('button', { type: 'button', class: 'ls-chip' + (L.cat === c ? ' on' : ''), 'aria-pressed': String(L.cat === c),
       onclick: () => { L.cat = c; store('ls_cat', c); drawPage(); } }, c)));
     pageEl.querySelector('.ls-body').replaceChildren(...[body].flat().filter(Boolean));
@@ -472,7 +678,9 @@
     const search = el('input', { class: 'field ls-search', type: 'search', placeholder: 'Search', 'aria-label': 'Search Listen', value: L.search, oninput: e => { L.search = e.target.value; drawPage(); } });
     const fm = el('input', { type: 'checkbox', id: 'ls-fm', checked: focusMusicOn(), onchange: () => { store('ls_focus_music', fm.checked ? 'on' : 'off'); toast(fm.checked ? 'Focus blocks will start your focus music on this device.' : 'Focus blocks won’t start music on this device.'); } });
     pageEl = el('div', { class: 'ls' },
-      el('div', { class: 'head' }, el('h1', {}, 'Listen'), el('button', { type: 'button', class: 'btn primary ls-add', onclick: addDialog }, icon('plus', 16), ' Add a video')),
+      el('div', { class: 'head' }, el('h1', {}, 'Listen'), el('div', { class: 'ls-headb' },
+        el('button', { type: 'button', class: 'btn ls-up', onclick: uploadDialog }, icon('upload', 16), ' Upload music'),
+        el('button', { type: 'button', class: 'btn primary ls-add', onclick: addDialog }, icon('plus', 16), ' Add a video'))),
       el('p', { class: 'meta' }, 'Your background music and videos. Playing carries on while you use the rest of the app.'),
       el('div', { class: 'ls-tools' }, el('div', { class: 'ls-chips', role: 'toolbar', 'aria-label': 'Categories' }), search),
       el('label', { class: 'ls-check ls-fm', for: 'ls-fm' }, fm, el('span', {}, 'When I start a focus block, play my focus music (', icon('target', 13), ' marked, or the Focus category) and fade it out when the block ends. On this device.')),
@@ -481,8 +689,27 @@
     return pageEl;
   }
 
+  /* ---------- no internet: the music saved on this Mac, without signing in ---------- */
+  async function offlineView() {
+    await offScan();
+    let saved = [];
+    try { saved = JSON.parse(store('ls_offline_list') || '[]').filter(x => OFF.ids.has(x.id)); } catch (e) {}
+    const grid = el('div', { class: 'ls-ogrid' }, saved.map(it =>
+      el('button', { type: 'button', class: 'ls-otrack', 'data-id': it.id, onclick: () => play(it, { shuffleCat: null, big: false }) },
+        el('span', { class: 'ls-audioart' }, icon('note', 22)),
+        el('span', { class: 'ls-ot' }, el('b', {}, it.title || 'Your music'), el('small', {}, [it.category, it.duration ? fmtTime(it.duration) : null].filter(Boolean).join(' · '))),
+        icon('play', 18))));
+    const page = el('div', { class: 'ls ls-offline' },
+      el('div', { class: 'head' }, el('h1', {}, 'You’re offline')),
+      el('p', { class: 'meta' }, 'Here’s your music saved on this Mac. Everything else comes back as soon as you’re online.'),
+      saved.length ? grid : el('p', { class: 'ls-empty' }, 'No music is saved on this Mac yet. When you’re online, upload music in Listen or play a track once to keep it here.'));
+    document.getElementById('app').replaceChildren(el('main', { id: 'main' }, page));
+    document.title = 'Offline · Hamid OS';
+  }
+
   /* ---------- wiring ---------- */
   DS.views.listen = viewListen;
+  DS.offlineView = offlineView;
   DS.listen = { play, closePlayer, parseYT };
   function ensureNav() {
     const nav = document.querySelector('#app nav.nav');

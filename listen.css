@@ -121,3 +121,42 @@ html.light .ls-tile{box-shadow:0 10px 28px rgba(60,50,20,.1);border:1px solid rg
   .ls-card.big{top:calc(70px + env(safe-area-inset-top,0px))}
 }
 .ls-arrows:not(:has(.ls-arrow:not([hidden]))){display:none}
+
+/* ---------- your own music (uploaded files, playable offline) ---------- */
+.ls .head .ls-headb{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.ls .head .ls-headb .ls-add{margin-left:0}
+.ls-up,.ls-startb .btn{display:inline-flex;align-items:center;gap:6px}
+.ls-startb{display:flex;gap:10px;flex-wrap:wrap}
+.ls-audioart{display:grid;place-items:center;height:100%;color:#fff;background:radial-gradient(80% 90% at 15% 10%,rgba(251,191,36,.55),transparent 60%),linear-gradient(140deg,#4338ca,#1e1b4b 70%)}
+.ls-badge.ls-offb{top:7px;left:7px;bottom:auto;right:auto;background:rgba(15,12,46,.72)}
+.ls-badge.ls-offb.on{background:#047857}
+/* the player card while one of your tracks plays: artwork, position bar and time instead of a video */
+.ls-card.audio .ls-vid{aspect-ratio:auto;height:112px}
+.ls-card.audio.big .ls-vid{height:auto;aspect-ratio:16/9}
+.ls-art{position:absolute;inset:0;display:grid;grid-template-rows:1fr auto auto;justify-items:center;align-items:center;padding:12px 14px 10px;color:#fff;
+  background:radial-gradient(80% 90% at 15% 10%,rgba(251,191,36,.5),transparent 60%),linear-gradient(140deg,#4338ca,#1e1b4b 70%)}
+.ls-astat{font:600 12px var(--ui);color:#e0e7ff;min-height:0}
+.ls-seekw{display:flex;align-items:center;gap:8px;width:100%}
+.ls-seek{flex:1;min-width:0;accent-color:#fbbf24;height:16px}
+.ls-tm{font:600 11.5px var(--ui);color:#e0e7ff;font-variant-numeric:tabular-nums;white-space:nowrap}
+/* upload dialog */
+.ls-file{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.ls-filebtn{display:inline-flex;align-items:center;gap:6px;justify-self:start;border:1.5px dashed var(--line);border-radius:12px;padding:10px 16px;font:700 14px var(--ui);color:var(--text);cursor:pointer}
+.ls-filebtn:hover{border-color:var(--amber)}
+.ls-filebtn:has(+.ls-file:focus-visible){outline:2px solid var(--amber);outline-offset:2px}
+.ls-ulist{list-style:none;margin:0;padding:0;display:grid;gap:6px;max-height:240px;overflow:auto}
+.ls-ulist li{display:grid;gap:2px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--soft)}
+.ls-ulist b{font:700 14px/1.3 var(--ui);color:var(--text);overflow-wrap:anywhere}
+.ls-ulist small{color:var(--muted)}
+.ls-ulist li.bad small{color:var(--amber)}
+.ls-ulist li.ok small{color:#34d399}
+/* offline screen */
+.ls-offline{padding-top:20px}
+.ls-ogrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:10px;margin-top:16px}
+.ls-otrack{display:grid;grid-template-columns:48px minmax(0,1fr) auto;align-items:center;gap:12px;padding:8px 14px 8px 8px;border-radius:14px;border:1px solid var(--line);background:var(--soft);color:var(--text);text-align:left;cursor:pointer}
+.ls-otrack .ls-audioart{width:48px;height:48px;border-radius:10px}
+.ls-otrack .ls-ot{display:grid;gap:2px;min-width:0}
+.ls-otrack b{font:700 15px/1.3 var(--ui);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ls-otrack small{color:var(--muted)}
+.ls-otrack:hover,.ls-otrack.playing{border-color:var(--amber)}
+html.light .ls-ulist li,html.light .ls-otrack{background:#fff}

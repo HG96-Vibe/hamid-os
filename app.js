@@ -72,6 +72,11 @@ const uid = () => state.user.id;
 
 /* ---------- auth flow ---------- */
 async function route() {
+  // No internet: open straight to the music saved on this Mac (listen.js), since signing in needs a connection.
+  if (navigator.onLine === false) {
+    if (document.readyState === 'loading') await new Promise(r => document.addEventListener('DOMContentLoaded', r, { once: true }));
+    if (window.DS?.offlineView) return window.DS.offlineView();
+  }
   const { data: { session } } = await sb.auth.getSession();
   if (!session) return renderLogin();
   state.user = session.user;
@@ -1221,5 +1226,6 @@ window.DS = { sb, q, el, state, uid, toast, refresh, go, setTask, carry, fetchTa
   dayName, shortDay, monthName, timeAgo, ctxColor, CONTEXTS, views: {} };
 { const h = location.hash.slice(1); if (VIEWS.some(([k]) => k === h)) state.view = h; }
 store('ds_seen', today());
+window.addEventListener('online', () => { if (document.querySelector('.ls-offline')) route(); });
 route();
 })();
