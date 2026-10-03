@@ -1,72 +1,107 @@
-// Hamid OS theme: the drifting constellation background, plus the outlined date in headings.
+// Hamid OS theme: the "Chip" circuit background, plus the outlined date in headings.
 (function () {
-  // Background: "Constellation". Loose points drift slowly and join with faint lines when they pass close;
-  // the cursor or a finger draws nearby points towards it with lines. Same dot colour as before.
+  // Background: "Chip". A single chip sits off to one side with traces fanning out from its pins to the edges
+  // of the screen. Signals slowly flow out along them, and now and then back in, making the chip glow.
+  // Colours follow the theme: light.css sets --bg-ink, --bg-glow, --bg-k and --bg-chip; dark defaults below.
   var canvas = document.createElement('canvas');
   canvas.className = 'signal-bg';
   canvas.setAttribute('aria-hidden', 'true');
   var c = canvas.getContext('2d');
   if (c) {
     var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    var W = 0, H = 0, dpr = 1, px = 0, py = 0, target = 0, near = 0, pts = [], LINK = 120, running = false;
-    // Colours come from the theme (light.css sets --dot, --dot-a, --line-a); the dark defaults are below.
-    var DOT = '#a5b4fc', DOT_A = .5, LINE_A = .22;
+    var W = 0, H = 0, dpr = 1, px = 0, py = 0, target = 0, near = 0, running = false, last = 0, t0 = 0, lastSpawn = 0;
+    var INK = '165,180,252', GLOW = '251,191,36', K = 1, CHIP_FILL = 'rgba(30,27,75,.85)';
+    var chip = null, traces = [], sigs = [];
+    var DIRS = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
+    var rgba = function (rgb, a) { return 'rgba(' + rgb + ',' + Math.max(0, Math.min(1, a)) + ')'; };
     var colours = function () {
-      var st = getComputedStyle(document.documentElement);
-      DOT = st.getPropertyValue('--dot').trim() || '#a5b4fc';
-      DOT_A = parseFloat(st.getPropertyValue('--dot-a')) || .5;
-      LINE_A = parseFloat(st.getPropertyValue('--line-a')) || .22;
+      var st = getComputedStyle(document.documentElement), v = function (n) { return st.getPropertyValue(n).trim(); };
+      INK = v('--bg-ink') || '165,180,252'; GLOW = v('--bg-glow') || '251,191,36';
+      K = parseFloat(v('--bg-k')) || 1; CHIP_FILL = v('--bg-chip') || 'rgba(30,27,75,.85)';
     };
-    var seed = function () {
-      var n = Math.round(W * H / 11000), i;
-      for (i = pts.length; i < n; i++) pts.push({ x: Math.random() * W, y: Math.random() * H, vx: (Math.random() - .5) * .18, vy: (Math.random() - .5) * .18 });
-      pts.length = n;
+    var polyLen = function (p) { var L = 0; for (var i = 2; i < p.length; i += 2) L += Math.hypot(p[i] - p[i - 2], p[i + 1] - p[i - 1]); return L; };
+    var pointAt = function (p, d) {
+      for (var i = 2; i < p.length; i += 2) {
+        var sl = Math.hypot(p[i] - p[i - 2], p[i + 1] - p[i - 1]);
+        if (d <= sl) { var k = sl ? d / sl : 0; return [p[i - 2] + (p[i] - p[i - 2]) * k, p[i - 1] + (p[i + 1] - p[i - 1]) * k]; }
+        d -= sl;
+      }
+      return [p[p.length - 2], p[p.length - 1]];
+    };
+    var glowDot = function (x, y, r, a) {
+      var g = c.createRadialGradient(x, y, 0, x, y, r * 5);
+      g.addColorStop(0, rgba(GLOW, a)); g.addColorStop(.3, rgba(GLOW, a * .35)); g.addColorStop(1, rgba(GLOW, 0));
+      c.fillStyle = g; c.beginPath(); c.arc(x, y, r * 5, 0, 6.2832); c.fill();
+      c.fillStyle = rgba(GLOW, Math.min(1, a * 1.2)); c.beginPath(); c.arc(x, y, r, 0, 6.2832); c.fill();
+    };
+    var layout = function () {
+      // Sit in the empty right-hand margin beside the page when it is wide enough; otherwise at 80% across.
+      var phone = W < 760, margin = (W - Math.min(1140, W - 40)) / 2, s = Math.min(150, Math.max(96, W * .09));
+      if (!phone && margin > 116) s = Math.min(s, margin - 36);
+      var cx = phone ? W * .5 : margin > 116 ? W - margin / 2 : W * .8, cy = H * (phone ? .22 : .32);
+      chip = { x: cx - s / 2, y: cy - s / 2, s: s, glow: 0 }; traces = []; sigs = [];
+      var pins = 7, gap = s / (pins + 1);
+      for (var side = 0; side < 4; side++) for (var i = 1; i <= pins; i++) {
+        var x, y, d, o = i * gap;
+        if (side === 0) { x = chip.x + o; y = chip.y; d = 6; } else if (side === 1) { x = chip.x + s; y = chip.y + o; d = 0; }
+        else if (side === 2) { x = chip.x + o; y = chip.y + s; d = 2; } else { x = chip.x; y = chip.y + o; d = 4; }
+        var pts = [x, y], r = 16 + (i % 3) * 14; x += DIRS[d][0] * r; y += DIRS[d][1] * r; pts.push(x, y);
+        var bend = (d + (i <= pins / 2 ? 7 : 1)) % 8; r = 18 + Math.abs(i - (pins + 1) / 2) * 16; x += DIRS[bend][0] * r; y += DIRS[bend][1] * r; pts.push(x, y);
+        var far = Math.max(W, H) * 1.2; x += DIRS[d][0] * far; y += DIRS[d][1] * far; pts.push(x, y);
+        traces.push({ pts: pts, len: polyLen(pts) });
+      }
     };
     var resize = function () {
       dpr = Math.min(window.devicePixelRatio || 1, 2); W = window.innerWidth; H = window.innerHeight;
       canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); c.setTransform(dpr, 0, 0, dpr, 0, 0);
-      LINK = W < 760 ? 100 : 120;
-      seed();
+      layout();
     };
-    var draw = function () {
+    var draw = function (t, dt) {
       c.clearRect(0, 0, W, H);
-      c.fillStyle = c.strokeStyle = DOT; c.lineWidth = 1;
-      var i, j, a, b, d, reach = LINK * 1.6;
-      for (i = 0; i < pts.length; i++) {
-        a = pts[i];
-        for (j = i + 1; j < pts.length; j++) {
-          b = pts[j]; d = Math.sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y));
-          if (d < LINK) { c.globalAlpha = (1 - d / LINK) * LINE_A; c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke(); }
-        }
-        if (near > .01) {
-          d = Math.sqrt((a.x - px) * (a.x - px) + (a.y - py) * (a.y - py));
-          if (d < reach) { c.globalAlpha = (1 - d / reach) * LINE_A * 1.8 * near; c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(px, py); c.stroke(); }
-        }
-        c.globalAlpha = DOT_A; c.beginPath(); c.arc(a.x, a.y, 1.5, 0, 6.2832); c.fill();
+      var s = t / 1000, i, tr;
+      if (!reduced && t - lastSpawn > 900 && sigs.length < 8) { lastSpawn = t; sigs.push({ tr: traces[Math.floor(Math.random() * traces.length)], d: 0, inward: Math.random() < .3 }); }
+      c.lineWidth = 1.2; c.lineJoin = 'round'; c.strokeStyle = rgba(INK, .12 * K);
+      for (i = 0; i < traces.length; i++) { tr = traces[i].pts; c.beginPath(); c.moveTo(tr[0], tr[1]); for (var j = 2; j < tr.length; j += 2) c.lineTo(tr[j], tr[j + 1]); c.stroke(); }
+      var v = reduced ? 0 : .055 * dt, keep = [];
+      for (i = 0; i < sigs.length; i++) {
+        var sg = sigs[i], view = Math.min(sg.tr.len, Math.max(W, H) * .9);
+        sg.d += v;
+        if (sg.d < view) { var p = pointAt(sg.tr.pts, Math.max(0, sg.inward ? view - sg.d : sg.d)); glowDot(p[0], p[1], 1.8, .85 * K); keep.push(sg); }
+        else if (sg.inward) chip.glow = 1;
       }
-      c.globalAlpha = 1;
+      sigs = keep;
+      chip.glow *= reduced ? 1 : Math.pow(.985, dt / 16);
+      var cx = chip.x + chip.s / 2, cy = chip.y + chip.s / 2, dc = Math.hypot(px - cx, py - cy);
+      var hover = near > .01 && dc < 260 ? (1 - dc / 260) * near : 0;
+      var lit = Math.max(chip.glow, .25 + .15 * Math.sin(s * .6), hover);
+      var g = c.createRadialGradient(cx, cy, 0, cx, cy, chip.s);
+      g.addColorStop(0, rgba(GLOW, .18 * lit * K)); g.addColorStop(1, rgba(GLOW, 0));
+      c.fillStyle = g; c.fillRect(chip.x - chip.s / 2, chip.y - chip.s / 2, chip.s * 2, chip.s * 2);
+      c.fillStyle = CHIP_FILL; c.strokeStyle = rgba(INK, (.4 + lit * .3) * K); c.lineWidth = 1.4;
+      c.beginPath(); if (c.roundRect) c.roundRect(chip.x, chip.y, chip.s, chip.s, 8); else c.rect(chip.x, chip.y, chip.s, chip.s); c.fill(); c.stroke();
+      c.strokeStyle = rgba(INK, .22 * K);
+      c.beginPath(); if (c.roundRect) c.roundRect(chip.x + 14, chip.y + 14, chip.s - 28, chip.s - 28, 4); else c.rect(chip.x + 14, chip.y + 14, chip.s - 28, chip.s - 28); c.stroke();
+      c.fillStyle = rgba(GLOW, (.5 + lit * .5) * K); c.beginPath(); c.arc(chip.x + 22, chip.y + 22, 2.5, 0, 6.2832); c.fill();
     };
-    var step = function () {
-      near += (target - near) * .18;
-      for (var i = 0; i < pts.length; i++) {
-        var p = pts[i]; p.x += p.vx; p.y += p.vy;
-        if (p.x < -10) p.x = W + 10; else if (p.x > W + 10) p.x = -10;
-        if (p.y < -10) p.y = H + 10; else if (p.y > H + 10) p.y = -10;
-      }
-    };
-    var frame = function () {
+    var frame = function (now) {
       if (document.hidden) { running = false; return; }
-      step(); draw(); requestAnimationFrame(frame);
+      var dt = Math.min(50, now - last); last = now;
+      near += (target - near) * .15;
+      draw(now - t0, dt);
+      requestAnimationFrame(frame);
     };
-    var start = function () { if (reduced) { draw(); return; } if (!running) { running = true; requestAnimationFrame(frame); } };
-    window.addEventListener('resize', function () { resize(); if (reduced) draw(); });
+    var start = function () {
+      if (reduced) { draw(0, 16); return; }
+      if (!running) { running = true; last = performance.now(); if (!t0) t0 = last; requestAnimationFrame(frame); }
+    };
+    window.addEventListener('resize', function () { resize(); if (reduced) draw(0, 16); });
+    window.addEventListener('ds-theme', function () { colours(); if (reduced) draw(0, 16); });
     document.addEventListener('visibilitychange', function () { if (!document.hidden) start(); });
-    var follow = function (e) { px = e.clientX; py = e.clientY; target = 1; if (reduced) { near = 1; draw(); } };
+    var follow = function (e) { px = e.clientX; py = e.clientY; target = 1; };
     window.addEventListener('pointermove', follow, { passive: true });
     window.addEventListener('pointerdown', follow, { passive: true });
-    window.addEventListener('pointerup', function (e) { if (e.pointerType !== 'mouse') { target = 0; if (reduced) { near = 0; draw(); } } }, { passive: true });
-    document.documentElement.addEventListener('pointerleave', function () { target = 0; if (reduced) { near = 0; draw(); } });
-    window.addEventListener('ds-theme', function () { colours(); if (reduced) draw(); });
+    window.addEventListener('pointerup', function (e) { if (e.pointerType !== 'mouse') target = 0; }, { passive: true });
+    document.documentElement.addEventListener('pointerleave', function () { target = 0; });
     colours();
     resize();
     document.body.insertBefore(canvas, document.body.firstChild);
