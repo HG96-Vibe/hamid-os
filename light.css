@@ -73,8 +73,14 @@ html.light .hm-qedit{background:rgba(255,255,255,.8);border-color:var(--line);co
 html.light.ds-hero-compact .hm-hero.evening::before{box-shadow:-12px 8px 0 0 #818cf8}
 
 /* sun / moon switch on the Home profile strip */
-.lt-toggle{flex:none;align-self:flex-start;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:var(--soft);color:var(--amber);display:grid;place-items:center;padding:0;cursor:pointer;transition:background .15s,border-color .15s}
+.lt-stack{flex:none;align-self:flex-start;display:flex;flex-direction:column;gap:8px}
+.lt-toggle{flex:none;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:var(--soft);color:var(--amber);display:grid;place-items:center;padding:0;cursor:pointer;transition:background .15s,border-color .15s}
 .lt-toggle:hover{border-color:var(--amber);background:var(--soft-2)}
 .lt-toggle:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
 .lt-toggle svg{width:20px;height:20px}
 html.light .lt-toggle{color:#4338ca;background:#f4f2ec}
+html.light .lt-refresh{color:#4b4f7a}
+.lt-refresh{color:var(--muted)}
+.lt-refresh.spin svg{animation:lt-spin .8s linear infinite}
+@keyframes lt-spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.lt-refresh.spin svg{animation:none}}
