@@ -1,4 +1,4 @@
-/* Listen tab (listen.js): YouTube cards by category, built-in sounds, and the player dock at the bottom left. */
+/* Listen tab (listen.js): YouTube cards by category and the player dock at the bottom left. */
 .ls-i{display:inline-grid;place-items:center;flex:none}
 .ls .head .ls-add{margin-left:auto;display:inline-flex;align-items:center;gap:6px}
 .ls-tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
@@ -61,17 +61,6 @@ html.light .ls-arrow{background:#fff}
 .ls-start h2{margin:0;font:800 24px/1.2 var(--display);color:var(--text)}
 .ls-start p{margin:0;color:var(--muted)}
 
-/* built-in sounds */
-.ls-sounds{padding:16px 18px;border:1px solid var(--line);border-radius:18px;background:var(--soft)}
-.ls-sounds .ls-sech{margin-bottom:10px}
-.ls-sounds h2{font-size:18px}
-.ls-sgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
-.ls-snd{display:grid;gap:6px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.03)}
-.ls-snd.on{border-color:var(--amber);background:rgba(251,191,36,.08)}
-.ls-snd-b{display:flex;align-items:center;gap:8px;border:0;background:none;color:var(--text);font:700 14px var(--ui);padding:0;cursor:pointer;text-align:left}
-.ls-snd-dot{width:10px;height:10px;border-radius:50%;border:2px solid var(--faint);flex:none}
-.ls-snd.on .ls-snd-dot{background:var(--amber);border-color:var(--amber);box-shadow:0 0 0 4px rgba(251,191,36,.18)}
-.ls-snd input{width:100%;accent-color:var(--amber-2);height:18px}
 
 /* add dialog */
 .ls-dlg{width:min(560px,calc(100% - 24px))}
@@ -86,8 +75,6 @@ html.light .ls-arrow{background:#fff}
 /* the player dock: bottom left, outside the page so playing carries on everywhere */
 .ls-dock{position:fixed;left:calc(16px + env(safe-area-inset-left,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:44;display:flex;flex-direction:column;align-items:flex-start;gap:8px;pointer-events:none}
 .ls-dock>*{pointer-events:auto}
-.ls-pill{display:flex;align-items:center;gap:10px;padding:7px 8px 7px 14px;border-radius:999px;background:#0f0c2e;color:#fff;border:1px solid rgba(199,210,254,.2);box-shadow:0 10px 26px rgba(5,3,20,.45);font:600 13px var(--ui)}
-.ls-pill-x{border:0;border-radius:999px;background:rgba(255,255,255,.1);color:#fff;font:700 12px var(--ui);padding:5px 10px;cursor:pointer}
 .ls-card{width:272px;border-radius:18px;overflow:visible;background:#0f0c2e;color:#fff;border:1px solid rgba(199,210,254,.18);box-shadow:0 18px 44px rgba(5,3,20,.55)}
 .ls-vid{position:relative;aspect-ratio:16/9;background:#000;border-radius:18px 18px 0 0;overflow:hidden}
 .ls-frame,.ls-frame iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
@@ -121,7 +108,6 @@ body.ls-big::after{content:"";position:fixed;inset:0;background:rgba(10,8,30,.55
 .ls-card.min :is(.ls-loop,.ls-volw,.ls-mw,.ls-size){display:none}
 .ls-card.min .ls-err{display:none}
 
-html.light .ls-sounds{background:#fff;border-color:rgba(30,27,75,.08);box-shadow:var(--shadow)}
 html.light .ls-snd{background:#faf9f5}
 html.light .ls-chip{background:#fff}
 html.light .ls-menu{background:#fffdf9;border-color:rgba(30,27,75,.12)}

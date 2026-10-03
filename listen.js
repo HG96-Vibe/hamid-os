@@ -1,5 +1,5 @@
-// Listen tab: YouTube videos and playlists to play while you work (long mixes, lo-fi, ambient), plus sounds made
-// right here (rain, brown noise and more). The player lives outside the page, at the bottom left, so the music
+// Listen tab: YouTube videos and playlists to play while you work (long mixes, lo-fi, ambient).
+// The player lives outside the page, at the bottom left, so the music
 // keeps going while you move around the app. Long mixes resume where you left them. Focus blocks can start your
 // focus music and fade it out when they end, and there is a sleep timer.
 // YouTube embeds are free and need no account; YouTube may show its usual ads.
@@ -94,7 +94,7 @@
     document.head.append(s);
   }));
 
-  let dock = null, card = null, soundsPill = null;
+  let dock = null, card = null;
   function ensureDock() {
     if (dock && dock.isConnected) return dock;
     dock = el('div', { class: 'ls-dock', id: 'ls-dock' });
@@ -269,101 +269,11 @@
       toast(`The music will fade out in ${v} minutes.`);
       sleepTick = setInterval(() => {
         if (!P.sleepAt) return clearInterval(sleepTick);
-        if (Date.now() >= P.sleepAt) { clearInterval(sleepTick); P.sleepAt = 0; fadeOut(10000, () => { sounds.stopAll(); paintCard(); }); }
+        if (Date.now() >= P.sleepAt) { clearInterval(sleepTick); P.sleepAt = 0; fadeOut(10000, () => paintCard()); }
         paintCard();
       }, 30000);
     }
     paintCard();
-  }
-
-  /* =====================================================================
-     Built-in sounds, made live with Web Audio: no YouTube, no ads, no internet needed
-     ===================================================================== */
-  const SOUNDS = [['rain', 'Rain'], ['brown', 'Brown noise'], ['pink', 'Pink noise'], ['waves', 'Ocean waves'], ['fire', 'Fireplace'], ['wind', 'Wind']];
-  const sounds = (() => {
-    let ac = null, master = null;
-    const on = {};
-    const vols = (() => { try { return JSON.parse(store('ls_sound_vols') || '{}'); } catch (e) { return {}; } })();
-    const ctx = () => {
-      if (!ac) { const AC = window.AudioContext || window.webkitAudioContext; ac = new AC(); master = ac.createGain(); master.gain.value = 1; master.connect(ac.destination); }
-      if (ac.state === 'suspended') ac.resume();
-      return ac;
-    };
-    function noise(kind, secs = 6) {
-      const n = ac.sampleRate * secs, buf = ac.createBuffer(2, n, ac.sampleRate);
-      for (let c = 0; c < 2; c++) {
-        const d = buf.getChannelData(c);
-        let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0, last = 0;
-        for (let i = 0; i < n; i++) {
-          const w = Math.random() * 2 - 1;
-          if (kind === 'white') d[i] = w * 0.5;
-          else if (kind === 'pink') { b0 = .99886 * b0 + w * .0555179; b1 = .99332 * b1 + w * .0750759; b2 = .969 * b2 + w * .153852; b3 = .8665 * b3 + w * .3104856; b4 = .55 * b4 + w * .5329522; b5 = -.7616 * b5 - w * .016898; d[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * .5362) * .11; b6 = w * .115926; }
-          else { last = (last + .02 * w) / 1.02; d[i] = last * 3.5; }
-        }
-      }
-      return buf;
-    }
-    function loopSrc(buf) { const s = ac.createBufferSource(); s.buffer = buf; s.loop = true; s.start(); return s; }
-    const build = {
-      rain() { const g = ac.createGain(), hp = ac.createBiquadFilter(), lp = ac.createBiquadFilter();
-        hp.type = 'highpass'; hp.frequency.value = 600; lp.type = 'lowpass'; lp.frequency.value = 7000;
-        const s = loopSrc(noise('pink')); s.connect(hp); hp.connect(lp); lp.connect(g);
-        const lfo = ac.createOscillator(), lg = ac.createGain(); lfo.frequency.value = .15; lg.gain.value = .12; lfo.connect(lg); lg.connect(g.gain); lfo.start();
-        g.gain.value = .9; return { out: g, stop: () => { s.stop(); lfo.stop(); } }; },
-      brown() { const g = ac.createGain(), lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 600;
-        const s = loopSrc(noise('brown')); s.connect(lp); lp.connect(g); g.gain.value = .9; return { out: g, stop: () => s.stop() }; },
-      pink() { const g = ac.createGain(); const s = loopSrc(noise('pink')); s.connect(g); g.gain.value = .6; return { out: g, stop: () => s.stop() }; },
-      waves() { const g = ac.createGain(), lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1200;
-        const s = loopSrc(noise('pink', 8)); s.connect(lp); lp.connect(g); g.gain.value = .35;
-        const lfo = ac.createOscillator(), lg = ac.createGain(); lfo.frequency.value = .09; lg.gain.value = .33; lfo.connect(lg); lg.connect(g.gain); lfo.start();
-        return { out: g, stop: () => { s.stop(); lfo.stop(); } }; },
-      fire() { const g = ac.createGain(), lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 400;
-        const s = loopSrc(noise('brown')); s.connect(lp); lp.connect(g); g.gain.value = .7;
-        // crackles: short bright clicks at random moments
-        const click = ac.createBuffer(1, Math.floor(ac.sampleRate * .03), ac.sampleRate), cd = click.getChannelData(0);
-        for (let i = 0; i < cd.length; i++) cd[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / cd.length, 6);
-        const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1500; hp.connect(g);
-        let alive = true;
-        const pop = () => { if (!alive) return; const c = ac.createBufferSource(), cg = ac.createGain(); c.buffer = click; cg.gain.value = .3 + Math.random() * .9; c.connect(cg); cg.connect(hp); c.start(); setTimeout(pop, 60 + Math.random() * (Math.random() < .2 ? 900 : 260)); };
-        pop();
-        return { out: g, stop: () => { alive = false; s.stop(); } }; },
-      wind() { const g = ac.createGain(), bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 500; bp.Q.value = .8;
-        const s = loopSrc(noise('pink', 8)); s.connect(bp); bp.connect(g); g.gain.value = .7;
-        const lfo = ac.createOscillator(), lg = ac.createGain(); lfo.frequency.value = .05; lg.gain.value = 350; lfo.connect(lg); lg.connect(bp.frequency); lfo.start();
-        return { out: g, stop: () => { s.stop(); lfo.stop(); } }; }
-    };
-    const vol = k => (vols[k] != null ? vols[k] : 50) / 100;
-    function start(k) {
-      if (on[k]) return;
-      ctx();
-      const node = build[k](), lvl = ac.createGain();
-      lvl.gain.setValueAtTime(0, ac.currentTime); lvl.gain.linearRampToValueAtTime(vol(k), ac.currentTime + 1.5);
-      node.out.connect(lvl); lvl.connect(master);
-      on[k] = { node, lvl };
-      paintSounds();
-    }
-    function stop(k) {
-      const s = on[k]; if (!s) return;
-      delete on[k];
-      s.lvl.gain.cancelScheduledValues(ac.currentTime); s.lvl.gain.setValueAtTime(s.lvl.gain.value, ac.currentTime); s.lvl.gain.linearRampToValueAtTime(0, ac.currentTime + 1);
-      setTimeout(() => { try { s.node.stop(); s.lvl.disconnect(); } catch (e) {} }, 1200);
-      paintSounds();
-    }
-    function setVol(k, v) { vols[k] = v; store('ls_sound_vols', JSON.stringify(vols)); if (on[k]) on[k].lvl.gain.setTargetAtTime(v / 100, ac.currentTime, .1); }
-    const stopAll = () => Object.keys(on).forEach(stop);
-    const active = () => Object.keys(on);
-    return { start, stop, setVol, stopAll, active, vol: k => (vols[k] != null ? vols[k] : 50), isOn: k => !!on[k] };
-  })();
-  function paintSounds() {
-    const act = sounds.active();
-    document.querySelectorAll('.ls-snd').forEach(t => { const on = sounds.isOn(t.dataset.k); t.classList.toggle('on', on); t.querySelector('.ls-snd-b').setAttribute('aria-pressed', String(on)); });
-    // a small pill in the dock while any sound is on, so it can be stopped from anywhere
-    ensureDock();
-    if (act.length) {
-      if (!soundsPill || !soundsPill.isConnected) { soundsPill = el('div', { class: 'ls-pill' }); dock.prepend(soundsPill); }
-      soundsPill.replaceChildren(el('span', {}, '♪ ' + act.map(k => SOUNDS.find(s => s[0] === k)[1]).join(' + ')),
-        el('button', { type: 'button', class: 'ls-pill-x', onclick: () => sounds.stopAll(), 'aria-label': 'Stop the sounds', title: 'Stop the sounds' }, 'Stop'));
-    } else if (soundsPill) { soundsPill.remove(); soundsPill = null; }
   }
 
   /* =====================================================================
@@ -557,17 +467,6 @@
     if (Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y);
   }
 
-  function soundsPanel() {
-    return el('section', { class: 'ls-sounds' },
-      el('div', { class: 'ls-sech' }, el('h2', {}, 'Built-in sounds'), el('span', { class: 'ls-hint' }, 'Made right here: no ads, no internet. Mix them, or play them under a video.')),
-      el('div', { class: 'ls-sgrid' }, SOUNDS.map(([k, name]) => {
-        const r = el('input', { type: 'range', min: '0', max: '100', value: String(sounds.vol(k)), 'aria-label': name + ' volume', oninput: () => sounds.setVol(k, +r.value) });
-        return el('div', { class: 'ls-snd' + (sounds.isOn(k) ? ' on' : ''), 'data-k': k },
-          el('button', { type: 'button', class: 'ls-snd-b', 'aria-pressed': String(sounds.isOn(k)), onclick: () => (sounds.isOn(k) ? sounds.stop(k) : sounds.start(k)) },
-            el('span', { class: 'ls-snd-dot', 'aria-hidden': 'true' }), name), r);
-      })));
-  }
-
   async function viewListen() {
     await ensure();
     const search = el('input', { class: 'field ls-search', type: 'search', placeholder: 'Search', 'aria-label': 'Search Listen', value: L.search, oninput: e => { L.search = e.target.value; drawPage(); } });
@@ -577,7 +476,6 @@
       el('p', { class: 'meta' }, 'Your background music and videos. Playing carries on while you use the rest of the app.'),
       el('div', { class: 'ls-tools' }, el('div', { class: 'ls-chips', role: 'toolbar', 'aria-label': 'Categories' }), search),
       el('label', { class: 'ls-check ls-fm', for: 'ls-fm' }, fm, el('span', {}, 'When I start a focus block, play my focus music (', icon('target', 13), ' marked, or the Focus category) and fade it out when the block ends. On this device.')),
-      soundsPanel(),
       el('div', { class: 'ls-body' }));
     drawPage();
     return pageEl;
@@ -585,7 +483,7 @@
 
   /* ---------- wiring ---------- */
   DS.views.listen = viewListen;
-  DS.listen = { play, closePlayer, parseYT, sounds };
+  DS.listen = { play, closePlayer, parseYT };
   function ensureNav() {
     const nav = document.querySelector('#app nav.nav');
     if (!nav) return;
