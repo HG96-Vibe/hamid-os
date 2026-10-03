@@ -178,8 +178,14 @@
   html.ds-hero-smaller .hm-qsrc{font-size:20px}
   html.ds-hero-smaller .hm-qnote p{font-size:27px}
   /* "Compact" banner: smaller text, kept below the greeting row */
-  html.ds-hero-compact .hm-hero.qn-on .hm-qnote{top:50px;transform:none;gap:7px;padding-left:22px}
-  html.ds-hero-compact .hm-qsrc{font-size:11px}
-  html.ds-hero-compact .hm-qnote p{font-size:13.5px;line-height:1.45}
+  html.ds-hero-compact .hm-hero.qn-on .hm-qnote{top:42px;right:140px;transform:none;gap:6px;padding:3px 0 3px 22px}
+  html.ds-hero-compact .hm-qsrc{font-size:10.5px}
+  html.ds-hero-compact .hm-qnote p{font-size:13px;line-height:1.4}
+  /* Paper (light mode): dark text on the pale banner */
+  html.light .hm-qnote{color:#1e1b4b;border-left-color:#d97706}
+  html.light .hm-qnote p{color:#3b3f6b}
+  html.light .hm-qsrc{color:#b45309}
+  html.light .hm-hero.evening .hm-qnote{border-left-color:rgba(79,70,229,.4)}
+  html.light .hm-hero.evening .hm-qsrc{color:#4f46e5}
   html.ds-hero-compact .hm-hero.qn-on .hm-quote{padding-right:0}
 }
