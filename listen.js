@@ -511,10 +511,24 @@
     const items = L.items.filter(match);
     const chips = ['All', 'Favourites', 'Recent', ...cats()];
     if (!chips.includes(L.cat)) L.cat = 'All';
-    const sec = (title, list, opts = {}) => list.length || opts.always ? el('section', { class: 'ls-sec' },
-      el('div', { class: 'ls-sech' }, el('h2', {}, title), el('span', { class: 'ls-n' }, String(list.length)),
-        opts.cat && list.length > 1 ? el('button', { type: 'button', class: 'btn ls-small', onclick: () => { const it = pick(opts.cat); if (it) play(it, { shuffleCat: opts.cat, big: false }); } }, icon('shuffle', 15), ' Shuffle') : null),
-      list.length ? el('div', { class: 'ls-grid' }, list.map(tile)) : el('p', { class: 'ls-empty' }, opts.empty || 'Nothing here yet.')) : null;
+    // each category is one row of four that scrolls sideways (arrows appear when there are more)
+    const sec = (title, list, opts = {}) => {
+      if (!list.length && !opts.always) return null;
+      const row = list.length ? el('div', { class: 'ls-grid' }, list.map(tile)) : null;
+      const arrow = (dir, label) => el('button', { type: 'button', class: 'ls-arrow', 'aria-label': label, title: label, hidden: list.length <= 4,
+        onclick: () => row.scrollBy({ left: dir * row.clientWidth, behavior: 'smooth' }) }, dir < 0 ? '‹' : '›');
+      const prev = arrow(-1, 'Scroll left'), next = arrow(1, 'Scroll right');
+      if (row) {
+        const edge = () => { prev.disabled = row.scrollLeft < 10; next.disabled = row.scrollLeft + row.clientWidth > row.scrollWidth - 10; };
+        row.addEventListener('scroll', edge, { passive: true });
+        if (window.ResizeObserver) new ResizeObserver(edge).observe(row); else setTimeout(edge, 100); // once it is on screen, and on resize
+      }
+      return el('section', { class: 'ls-sec' },
+        el('div', { class: 'ls-sech' }, el('h2', {}, title), el('span', { class: 'ls-n' }, String(list.length)),
+          opts.cat && list.length > 1 ? el('button', { type: 'button', class: 'btn ls-small', onclick: () => { const it = pick(opts.cat); if (it) play(it, { shuffleCat: opts.cat, big: false }); } }, icon('shuffle', 15), ' Shuffle') : null,
+          el('span', { class: 'ls-arrows' }, prev, next)),
+        row || el('p', { class: 'ls-empty' }, opts.empty || 'Nothing here yet.'));
+    };
     let body;
     if (!L.items.length) {
       body = el('div', { class: 'ls-start' }, el('h2', {}, 'Your music, one tap away'),
