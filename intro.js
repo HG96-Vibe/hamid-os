@@ -1,6 +1,8 @@
 // Opening screen (computers and phones): aurora photo, "Hamid OS", the signature, and the motto looping underneath.
 // "Parade": each word sweeps in from the left to the centre, holds, then sweeps out to the right as the next arrives.
-// It stays until you click, tap or press a key.
+// It stays until you click, tap or press a key. With sound on (the default), the first tap starts the "Aurora pad"
+// music while the screen stays up, and the second tap goes to Home as the music fades. The speaker button in the
+// corner mutes it (remembered per device); muted, one tap goes straight to Home. Browsers only allow sound after a tap.
 (function () {
   var el = document.getElementById('intro');
   if (!el) return;
@@ -52,9 +54,70 @@
       stage.appendChild(line);
     } else next();
   }
+  /* ---------- "Aurora pad": a slow, warm chord made live with Web Audio (nothing is downloaded) ---------- */
+  var SOUND_KEY = 'ds_intro_sound';
+  var soundOn = function () { try { return localStorage.getItem(SOUND_KEY) !== 'off'; } catch (e) { return true; } };
+  var AC = window.AudioContext || window.webkitAudioContext, ac = null, out = null, playing = false;
+  function music() {
+    if (!AC || playing) return false;
+    try {
+      ac = ac || new AC(); if (ac.state === 'suspended') ac.resume();
+      var t = ac.currentTime + .05, mtof = function (m) { return 440 * Math.pow(2, (m - 69) / 12); };
+      out = ac.createGain(); out.gain.value = .9;
+      var comp = ac.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4;
+      var verb = ac.createConvolver(), len = ac.sampleRate * 3.2, ir = ac.createBuffer(2, len, ac.sampleRate);
+      for (var ch = 0; ch < 2; ch++) { var d = ir.getChannelData(ch); for (var k = 0; k < len; k++) d[k] = (Math.random() * 2 - 1) * Math.pow(1 - k / len, 2.6); }
+      verb.buffer = ir; var wet = ac.createGain(); wet.gain.value = .55;
+      var bus = ac.createGain(); bus.connect(out); bus.connect(verb); verb.connect(wet); wet.connect(out); out.connect(comp); comp.connect(ac.destination);
+      var pad = function (notes, attack, level, cutoff, type) {
+        var f = ac.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = .6; f.frequency.setValueAtTime(300, t); f.frequency.linearRampToValueAtTime(cutoff, t + attack * 1.4);
+        var lfo = ac.createOscillator(), lg = ac.createGain(); lfo.frequency.value = .08; lg.gain.value = cutoff * .25; lfo.connect(lg); lg.connect(f.frequency); lfo.start(t);
+        var g = ac.createGain(); g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(level, t + attack);
+        notes.forEach(function (m) { [-7, 0, 7].forEach(function (c) { var o = ac.createOscillator(); o.type = type; o.frequency.value = mtof(m); o.detune.value = c; o.connect(f); o.start(t); }); });
+        f.connect(g); g.connect(bus);
+      };
+      pad([48, 55, 59, 62, 64], 3.5, .045, 1600, 'sawtooth'); // C major 9
+      pad([36], 4, .05, 500, 'triangle');                     // low C underneath
+      playing = true; el.classList.add('in-music');
+      return true;
+    } catch (e) { return false; }
+  }
+  function fadeMusic(sec) {
+    if (!playing || !ac) return;
+    playing = false; el.classList.remove('in-music');
+    out.gain.setTargetAtTime(.0001, ac.currentTime, sec / 4);
+    var a = ac; setTimeout(function () { try { a.close(); } catch (e) {} }, sec * 1000 + 400);
+    ac = null;
+  }
+
+  // Speaker button in the corner: mute / unmute, remembered on this device.
+  var SPK_ON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>';
+  var SPK_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="m22 9-6 6M16 9l6 6"/></svg>';
+  var spk = document.createElement('button');
+  spk.type = 'button'; spk.className = 'in-spk';
+  function paintSpk() { var on = soundOn(); spk.innerHTML = on ? SPK_ON : SPK_OFF; spk.setAttribute('aria-label', on ? 'Mute opening music' : 'Turn on opening music'); spk.title = spk.getAttribute('aria-label'); }
+  spk.addEventListener('click', function (e) {
+    e.stopPropagation();
+    var on = !soundOn();
+    try { localStorage.setItem(SOUND_KEY, on ? 'on' : 'off'); } catch (er) {}
+    paintSpk();
+    if (on) music(); else fadeMusic(1.2);
+  });
+  paintSpk();
+  el.appendChild(spk);
+
+  // First tap starts the music (if it is on and not playing yet); otherwise the tap goes to Home.
+  function tap() {
+    if (done) return;
+    if (soundOn() && !playing && !heard && music()) { heard = true; return; }
+    end();
+  }
+  var heard = false;
+
   function end() {
     if (done) return;
     done = true; clearTimeout(timer);
+    fadeMusic(2.5);
     el.classList.add('in-out');
     if (meta) meta.setAttribute('content', document.documentElement.classList.contains('light') ? '#f6f4ef' : (tint === '#07051a' ? '#1e1b4b' : tint || '#1e1b4b'));
     setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 600);
@@ -71,7 +134,6 @@
   if (window.Promise && waits.length) Promise.all(waits).then(start, start); else start();
   setTimeout(start, 1000);
 
-  el.addEventListener('click', end);
-  el.addEventListener('touchend', end, { passive: true });
-  document.addEventListener('keydown', end, { once: true });
+  el.addEventListener('click', tap);
+  document.addEventListener('keydown', function onKey(e) { if (done) { document.removeEventListener('keydown', onKey); return; } if (e.target === spk || e.key === 'Tab') return; tap(); });
 })();

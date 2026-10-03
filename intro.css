@@ -17,6 +17,16 @@
 .in-w[data-k="do"]{color:#fb7185;font-family:'Archivo Black','Arial Black',sans-serif}
 .in-w[data-k="reflect"]{color:#c4b5fd;font-family:'DM Serif Display',Georgia,serif;font-style:italic}
 .in-w[data-k="win"]{color:#bef264;font-family:'Bricolage Grotesque','Segoe UI',system-ui,sans-serif;font-weight:800;letter-spacing:-.04em}
+/* speaker (mute) button in the top-right corner; gently pulses while the music plays */
+.in-spk{position:absolute;top:calc(16px + env(safe-area-inset-top,0px));right:calc(16px + env(safe-area-inset-right,0px));width:44px;height:44px;border-radius:50%;
+  border:1px solid rgba(255,255,255,.28);background:rgba(7,5,26,.35);color:#fff;display:grid;place-items:center;padding:0;cursor:pointer;
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);transition:background .2s,border-color .2s}
+.in-spk:hover{background:rgba(7,5,26,.55);border-color:#fbbf24}
+.in-spk:focus-visible{outline:3px solid #fbbf24;outline-offset:2px}
+.in-spk svg{width:20px;height:20px}
+.intro.in-music .in-spk{border-color:rgba(251,191,36,.7);color:#fbbf24}
+@media (prefers-reduced-motion:no-preference){.intro.in-music .in-spk{animation:in-pulse 2.4s ease-in-out infinite}}
+@keyframes in-pulse{50%{box-shadow:0 0 0 8px rgba(251,191,36,.12)}}
 /* reduced motion: the whole motto sits still in one line */
 .in-line{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:.35em;font-size:calc(var(--in-size) * .55);white-space:nowrap}
 .in-line .in-w{position:static;font-size:inherit;opacity:1}
