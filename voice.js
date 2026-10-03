@@ -551,5 +551,5 @@
     requestAnimationFrame(() => { pending = false; inject(); if (D.wrap && !D.wrap.hidden && !editable(D.target)) hideMic(); });
   }).observe(app, { childList: true, subtree: true });
 
-  DS.voice = { play, stop, readMyDay, readToday, readWeek, readDocument, polish, chunk, startDictation, stopDictation };
+  DS.voice = { play, stop, unlock, readMyDay, readToday, readWeek, readDocument, polish, chunk, startDictation, stopDictation };
 })();

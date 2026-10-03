@@ -84,6 +84,7 @@
     return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
   }
 
+  const SPEAKER = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>';
   /* ---------- the quote's note: shown only when it fits inside the banner as it is ---------- */
   function fitNote(hero) {
     const note = hero && hero.querySelector('.hm-qnote');
@@ -235,6 +236,13 @@
     const pick = pickQuote(quotes, mode, hourNum());
     const qText = pick.body;
     const note = window.DS_QUOTE_NOTES && window.DS_QUOTE_NOTES.get(pick.body);
+    // Listen: Ollie (or the device voice) reads the quote, who said it and what it means
+    const listenQuote = el('button', { type: 'button', class: 'hm-qlisten', 'aria-label': 'Listen to this quote and what it means', title: 'Listen to this quote and what it means',
+      onclick: () => {
+        const v = DS.voice; if (!v) return toast('Read-aloud isn’t available in this browser.');
+        if (v.unlock) v.unlock();
+        v.play([`“${pick.body}”`, [pick.author, note && note[0]].filter(Boolean).join(', ') + '.', note ? note[1] : null].filter(x => x && x !== '.'), 'Quote');
+      } }, Object.assign(el('span', { class: 'hm-qli', 'aria-hidden': 'true' }), { innerHTML: SPEAKER }), el('span', {}, 'Listen'));
     const quoteNote = () => note ? el('div', { class: 'hm-qnote' }, el('span', { class: 'hm-qsrc' }, note[0]), el('p', {}, note[1])) : null;
     const hero = el('section', { class: `hm-hero ${mode}`, 'aria-label': 'Quote' },
       el('div', { class: 'hm-hero-top' },
@@ -242,7 +250,7 @@
         el('p', { class: 'hm-next' }, (mode === 'morning' ? 'Plan the day.' : 'Wind down.') + ` Next quote at ${nextHour()}.`)),
       el('figure', { class: 'hm-quote' + (qText.length > 120 ? ' long' : '') },
         el('blockquote', {}, qText),
-        pick.author ? el('figcaption', {}, pick.author) : null),
+        el('figcaption', {}, pick.author || null, listenQuote)),
       quoteNote(),
       el('button', { class: 'hm-qedit', onclick: openQuotes }, 'Edit quotes'));
 
