@@ -97,7 +97,25 @@
     window.addEventListener('resize', function () { resize(); if (reduced) draw(0, 16); });
     window.addEventListener('ds-theme', function () { colours(); if (reduced) draw(0, 16); });
     document.addEventListener('visibilitychange', function () { if (!document.hidden) start(); });
-    var follow = function (e) { px = e.clientX; py = e.clientY; target = 1; };
+    // Clicking the chip (on empty background, not on a card or button) fires two signals outwards.
+    var CONTENT = 'button,a,input,textarea,select,label,dialog,section,article,header,nav,.card,.sheet,.outcome,.td-row,.td-tile,.mr-box,.hm-hero,.pf,.bar,.dock,.drawer-wrap,.timerbar,.toast';
+    var onChip = function (e) {
+      if (!chip || (e.target && e.target.closest && e.target.closest(CONTENT))) return false;
+      return e.clientX >= chip.x && e.clientX <= chip.x + chip.s && e.clientY >= chip.y && e.clientY <= chip.y + chip.s;
+    };
+    var fire = function () {
+      var picks = traces.slice().sort(function () { return Math.random() - .5; }).slice(0, 2);
+      for (var i = 0; i < picks.length; i++) sigs.push({ tr: picks[i], d: 0, inward: false });
+      chip.glow = 1;
+      if (reduced) draw(0, 16);
+    };
+    window.addEventListener('click', function (e) { if (onChip(e)) fire(); });
+    var hovering = false;
+    var follow = function (e) {
+      px = e.clientX; py = e.clientY; target = 1;
+      var h = e.pointerType === 'mouse' && onChip(e);
+      if (h !== hovering) { hovering = h; document.documentElement.style.cursor = h ? 'pointer' : ''; }
+    };
     window.addEventListener('pointermove', follow, { passive: true });
     window.addEventListener('pointerdown', follow, { passive: true });
     window.addEventListener('pointerup', function (e) { if (e.pointerType !== 'mouse') target = 0; }, { passive: true });
