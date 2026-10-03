@@ -173,11 +173,11 @@
     const closed = new Set(rvs.filter(r => r.closed_at).map(r => r.period_start));
     const worked = new Set(recentT.map(t => t.period_start));
     const inboxCount = inboxRes.count || 0;
-    const wdLeft = isWeekend(d) ? 0 : 6 - dow(d);
+    const wdLeft = 7 - (dow(d) + 6) % 7; // days left in the week (Mon–Sun), including today; weekends are working days
     const monthEnd = addDays(addMonths(ms, 1), -1);
     const daysLeft = dayNum(monthEnd) - dayNum(d);
     const monthWord = fmt(d, { month: 'long' });
-    const weekSub = wdLeft === 0 ? 'Weekend' : wdLeft === 1 ? 'Last working day' : `${wdLeft} working days left`;
+    const weekSub = wdLeft === 1 ? 'Last day of the week' : `${wdLeft} days left`;
     const monthSub = daysLeft === 0 ? 'Last day of the month' : `${plural(daysLeft, 'day')} left in ${monthWord}`;
     const isSunday = dow(d) === 0, isMonthEnd = daysLeft === 0;
     const reportNote = isSunday
@@ -204,7 +204,7 @@
     const shapeLine = (d === now ? '' : 'Still on ') + dayName(d) + '. ' + (live.length
       ? `${plural(live.length, 'task')} on the sheet${carriedIn ? `, ${carriedIn} carried in` : ''}${done ? `, ${done} done` : ''}.`
       : 'Nothing on the sheet yet.');
-    const countdown = (wdLeft === 0 ? 'It’s the weekend.' : wdLeft === 1 ? 'Last working day of the week.' : `${wdLeft} working days left this week, including today.`) +
+    const countdown = (wdLeft === 1 ? 'Last day of the week.' : `${wdLeft} days left this week, including today.`) +
       ' ' + (daysLeft === 0 ? `Last day of ${monthWord}.` : `${plural(daysLeft, 'day')} left in ${monthWord}.`);
     const shape = el('div', { class: 'hm-shape' }, el('p', {}, shapeLine), el('p', { class: 'hm-sub' }, countdown, reportNote && mode === 'morning' ? ' ' + reportNote : ''),
       el('button', { class: 'btn primary', onclick: () => DS.go('today', d) }, d === now ? 'Open today’s sheet' : `Open ${weekday(d)}’s sheet`));

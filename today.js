@@ -142,8 +142,7 @@
         el('input', { type: 'radio', name, value: String(n), checked: val === n }), el('span', {}, n)))));
   }
   function openCloseout(d, openTasks, rv) {
-    const dow = new Date(d + 'T12:00:00').getDay(); // Friday and Saturday carry to Monday, matching the 4am rollover
-    const next = addDays(d, dow === 5 ? 3 : dow === 6 ? 2 : 1);
+    const next = addDays(d, 1); // always the very next day, weekends included, matching the 4am rollover
     const dlg = el('dialog', { 'aria-labelledby': 'co-h' });
     const form = el('form', { class: 'dlg', onsubmit: async e => {
       e.preventDefault();
