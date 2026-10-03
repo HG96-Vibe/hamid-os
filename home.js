@@ -1,5 +1,5 @@
 // Home tab: the page the sheet opens on.
-// A quote hero that changes at 6am and 6pm, today at a glance, top 5, week and month progress,
+// A quote hero that changes every hour, today at a glance, top 5, week and month progress,
 // things that need attention, close-out streak, last note, wins from a month ago and quick capture.
 // Morning (6am-6pm) leads with planning; evening (6pm-6am) leads with closing out the day.
 // Also adds: the Home nav button, a star on Today's task rows for the top 5 (starred rows glide to the top), and a Home section in Settings.
@@ -11,32 +11,58 @@
   const { sb, q, el, state, uid, toast, refresh, setTask, fetchTasks, parse, today, addDays,
     weekStart, monthStart, addMonths, fmt, dayName, shortDay, monthName } = DS;
 
-  /* ---------- starter quotes (used once, the first time Home opens) ---------- */
+  /* ---------- starter quotes: 50 from Marcus Aurelius and Seneca (also used by "Restore starter quotes") ---------- */
   const STARTER = [
-    ['Well begun is half done.', 'Aristotle', 'morning'],
-    ['Begin at once to live, and count each separate day as a separate life.', 'Seneca', 'morning'],
-    ['Lost time is never found again.', 'Benjamin Franklin', 'morning'],
-    ['The journey of a thousand miles begins with a single step.', 'Lao Tzu', 'morning'],
-    ['First say to yourself what you would be; and then do what you have to do.', 'Epictetus', 'morning'],
-    ['Small deeds done are better than great deeds planned.', 'Peter Marshall', 'morning'],
-    ['Amateurs sit and wait for inspiration, the rest of us just get up and go to work.', 'Stephen King', 'morning'],
-    ['Waste no more time arguing what a good man should be. Be one.', 'Marcus Aurelius', 'morning'],
-    ['Do what you can, with what you have, where you are.', 'Theodore Roosevelt', 'morning'],
-    ['Nothing is particularly hard if you divide it into small jobs.', 'Henry Ford', 'morning'],
-    ['Confine yourself to the present.', 'Marcus Aurelius', 'morning'],
-    ['Well done is better than well said.', 'Benjamin Franklin', 'morning'],
-    ['We are what we repeatedly do.', 'Will Durant', 'evening'],
-    ['Finish each day and be done with it. You have done what you could.', 'Ralph Waldo Emerson', 'evening'],
-    ['Rest is not idleness.', 'John Lubbock', 'evening'],
-    ['Success is the sum of small efforts, repeated day in and day out.', 'Robert Collier', 'evening'],
-    ['It does not matter how slowly you go as long as you do not stop.', 'Confucius', 'evening'],
-    ['Be not afraid of growing slowly; be afraid only of standing still.', 'Chinese proverb', 'evening'],
-    ['No man is free who is not master of himself.', 'Epictetus', 'evening'],
-    ['Little by little, one travels far.', 'Spanish proverb', 'evening'],
-    ['It is not that we have a short time to live, but that we waste a lot of it.', 'Seneca', 'evening'],
-    ['Our greatest glory is not in never falling, but in rising every time we fall.', 'Oliver Goldsmith', 'evening'],
-    ['Patience and perseverance have a magical effect before which difficulties disappear.', 'John Quincy Adams', 'evening'],
-    ['The best preparation for tomorrow is doing your best today.', 'H. Jackson Brown Jr.', 'evening']
+    ["Waste no more time arguing about what a good man should be. Be one.", "Marcus Aurelius", 'any'],
+    ["The impediment to action advances action. What stands in the way becomes the way.", "Marcus Aurelius", 'any'],
+    ["Very little is needed to make a happy life; it is all within yourself, in your way of thinking.", "Marcus Aurelius", 'any'],
+    ["If it is not right, do not do it; if it is not true, do not say it.", "Marcus Aurelius", 'any'],
+    ["At dawn, when you have trouble getting out of bed, tell yourself: I have to go to work, as a human being.", "Marcus Aurelius", 'any'],
+    ["Confine yourself to the present.", "Marcus Aurelius", 'any'],
+    ["Do every act of your life as though it were the very last act of your life.", "Marcus Aurelius", 'any'],
+    ["The soul becomes dyed with the colour of its thoughts.", "Marcus Aurelius", 'any'],
+    ["The best revenge is not to be like your enemy.", "Marcus Aurelius", 'any'],
+    ["How much more harmful are the consequences of anger than the causes of it.", "Marcus Aurelius", 'any'],
+    ["Loss is nothing else but change, and change is Nature's delight.", "Marcus Aurelius", 'any'],
+    ["Never let the future disturb you. You will meet it, if you have to, with the same weapons of reason which today arm you against the present.", "Marcus Aurelius", 'any'],
+    ["Dwell on the beauty of life. Watch the stars, and see yourself running with them.", "Marcus Aurelius", 'any'],
+    ["Accept the things to which fate binds you, and love the people with whom fate brings you together, but do so with all your heart.", "Marcus Aurelius", 'any'],
+    ["Look within. Within is the fountain of good, and it will ever bubble up, if you will ever dig.", "Marcus Aurelius", 'any'],
+    ["Do not act as if you were going to live ten thousand years. While you live, while it is in your power, be good.", "Marcus Aurelius", 'any'],
+    ["Reject your sense of injury and the injury itself disappears.", "Marcus Aurelius", 'any'],
+    ["The universe is change; our life is what our thoughts make it.", "Marcus Aurelius", 'any'],
+    ["Let not your mind run on what you lack as much as on what you have already.", "Marcus Aurelius", 'any'],
+    ["Be like the rocky headland on which the waves constantly break. It stands firm, and round it the seething waters are laid to rest.", "Marcus Aurelius", 'any'],
+    ["Never esteem anything as of advantage to you that will make you break your word or lose your self-respect.", "Marcus Aurelius", 'any'],
+    ["Nowhere can a man find a quieter or more untroubled retreat than in his own soul.", "Marcus Aurelius", 'any'],
+    ["The art of living is more like wrestling than dancing.", "Marcus Aurelius", 'any'],
+    ["Think of yourself as dead. You have lived your life. Now take what's left and live it properly.", "Marcus Aurelius", 'any'],
+    ["Whatever happens at all happens as it should.", "Marcus Aurelius", 'any'],
+    ["We suffer more often in imagination than in reality.", "Seneca", 'any'],
+    ["It is not that we have a short time to live, but that we waste a lot of it.", "Seneca", 'any'],
+    ["Begin at once to live, and count each separate day as a separate life.", "Seneca", 'any'],
+    ["While we are postponing, life speeds by.", "Seneca", 'any'],
+    ["Hold every hour in your grasp. Lay hold of today's task, and you will not need to depend so much upon tomorrow's.", "Seneca", 'any'],
+    ["If a man does not know to which port he is sailing, no wind is favourable.", "Seneca", 'any'],
+    ["It is not because things are difficult that we do not dare; it is because we do not dare that they are difficult.", "Seneca", 'any'],
+    ["No man was ever wise by chance.", "Seneca", 'any'],
+    ["As long as you live, keep learning how to live.", "Seneca", 'any'],
+    ["Wherever there is a human being, there is an opportunity for a kindness.", "Seneca", 'any'],
+    ["Associate with those who will make a better man of you.", "Seneca", 'any'],
+    ["The primary sign of a well-ordered mind is a man's ability to remain in one place and linger in his own company.", "Seneca", 'any'],
+    ["Life is long if you know how to use it.", "Seneca", 'any'],
+    ["Every day should be regulated as if it closed the series.", "Seneca", 'any'],
+    ["He suffers more than is necessary, who suffers before it is necessary.", "Seneca", 'any'],
+    ["Whatever can happen at any time can happen today.", "Seneca", 'any'],
+    ["No man is more unhappy than he who never faces adversity, for he is not permitted to prove himself.", "Seneca", 'any'],
+    ["Fire tests gold, misfortune tests brave men.", "Seneca", 'any'],
+    ["The greatest obstacle to living is expectancy, which hangs upon tomorrow and loses today.", "Seneca", 'any'],
+    ["Putting things off is the biggest waste of life: it snatches away each day as it comes, and denies us the present by promising the future.", "Seneca", 'any'],
+    ["Most powerful is he who has himself in his own power.", "Seneca", 'any'],
+    ["It is quality rather than quantity that matters.", "Seneca", 'any'],
+    ["Treat your inferiors as you would be treated by your betters.", "Seneca", 'any'],
+    ["The mind must be given relaxation. It will rise improved and sharper after a good break.", "Seneca", 'any'],
+    ["Until we have begun to go without them, we fail to realise how unnecessary many things are.", "Seneca", 'any']
   ];
   const SLOTS = [['morning', 'Morning'], ['evening', 'Evening'], ['any', 'Either']];
 
@@ -65,7 +91,9 @@
     return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
   }
 
-  /* ---------- quote rotation: every quote shows once before any repeats ---------- */
+  /* ---------- quote rotation: a new quote every hour; every quote shows once before any repeats ---------- */
+  const hourNum = () => dayNum(today()) * 24 + hour();
+  const nextHour = () => { const h = (hour() + 1) % 24; return h === 0 ? 'midnight' : h === 12 ? 'noon' : (h % 12) + (h < 12 ? 'am' : 'pm'); };
   function rng(seed) {
     return () => {
       seed = (seed + 0x6D2B79F5) | 0;
@@ -79,14 +107,14 @@
     for (let i = n - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
     return a;
   }
-  function pickQuote(quotes, oldWins, mode, d) {
-    const k = dayNum(d), slot = k * 2 + (mode === 'evening' ? 1 : 0);
-    // Roughly one slot in five shows one of your own wins from at least two weeks back.
-    if (oldWins.length && slot % 5 === 2) return { win: oldWins[perm(oldWins.length, slot)[0]] };
+  function pickQuote(quotes, oldWins, mode, hr) {
+    // Roughly one hour in five shows one of your own wins from at least two weeks back.
+    if (oldWins.length && hr % 5 === 2) return { win: oldWins[perm(oldWins.length, hr)[0]] };
+    const k = oldWins.length ? hr - Math.floor((hr + 2) / 5) : hr; // count only the quote hours, so none is skipped
     let pool = quotes.filter(x => x.slot === mode || x.slot === 'any');
     if (!pool.length) pool = quotes;
-    if (!pool.length) return { body: 'Well begun is half done.', author: 'Aristotle' };
-    const n = pool.length, cyc = Math.floor(k / n), salt = mode === 'evening' ? 7919 : 104729;
+    if (!pool.length) return { body: 'Confine yourself to the present.', author: 'Marcus Aurelius' };
+    const n = pool.length, cyc = Math.floor(k / n), salt = 104729;
     const p = perm(n, cyc * 31 + salt);
     if (n > 1 && cyc > 0 && k % n === 0) {
       const prev = perm(n, (cyc - 1) * 31 + salt);
@@ -161,7 +189,7 @@
       sb.from('tasks').select('id', { count: 'exact', head: true }).eq('horizon', 'month').eq('period_start', addMonths(ms, 1)).neq('status', 'carried')]);
     const settings = settingsRows[0] || null;
     const quotes = await ensureSeed(settings, quotesRaw);
-    rendered = { mode, d };
+    rendered = { mode, d, h: hourNum() };
 
     /* numbers */
     const live = tasks.filter(t => t.status !== 'carried');
@@ -190,12 +218,12 @@
     const name = settings?.display_name ? `, ${settings.display_name}` : '';
     const h = hour();
     const hello = h < 6 ? `Working late${name}?` : h < 12 ? `Good morning${name}.` : h < 18 ? `Good afternoon${name}.` : `Good evening${name}.`;
-    const pick = pickQuote(quotes, oldWins, mode, d);
+    const pick = pickQuote(quotes, oldWins, mode, hourNum());
     const qText = pick.win ? pick.win.body : pick.body;
     const hero = el('section', { class: `hm-hero ${mode}`, 'aria-label': 'Quote' },
       el('div', { class: 'hm-hero-top' },
         el('p', { class: 'hm-hello' }, hello),
-        el('p', { class: 'hm-next' }, mode === 'morning' ? 'Plan the day. Next quote at 6pm.' : 'Wind down. Next quote at 6am.')),
+        el('p', { class: 'hm-next' }, (mode === 'morning' ? 'Plan the day.' : 'Wind down.') + ` Next quote at ${nextHour()}.`)),
       el('figure', { class: 'hm-quote' + (qText.length > 120 ? ' long' : '') },
         el('blockquote', {}, qText),
         pick.win ? el('figcaption', {}, `From you, ${ago(pick.win.day)}`) : pick.author ? el('figcaption', {}, pick.author) : null),
@@ -485,7 +513,7 @@
         toast('Name saved.');
       } },
         el('div', { class: 'line' }, el('span', {}, 'Greet me as'), nameIn, el('button', { class: 'btn', type: 'submit' }, 'Save name'))),
-      el('p', { class: 'meta', style: 'margin:14px 0 10px' }, 'The quote at the top of Home changes at 6am and 6pm. Every quote shows once before any repeat, and every so often one of your own past wins takes its place.'),
+      el('p', { class: 'meta', style: 'margin:14px 0 10px' }, 'The quote at the top of Home changes every hour. Every quote shows once before any repeat, and every so often one of your own past wins takes its place.'),
       el('button', { class: 'btn', onclick: openQuotes }, 'Edit quotes'));
     const secs = wrap.querySelectorAll(':scope > section');
     if (secs.length >= 2) secs[1].after(sec); else wrap.append(sec);
@@ -507,7 +535,7 @@
   }).observe(app, { childList: true, subtree: true });
 
   // Switch between morning and evening (and roll the day over) without a reload.
-  const stale = () => state.user && state.view === 'home' && rendered && (rendered.mode !== modeNow() || rendered.d !== workDay()) && !document.querySelector('dialog[open]');
+  const stale = () => state.user && state.view === 'home' && rendered && (rendered.mode !== modeNow() || rendered.d !== workDay() || rendered.h !== hourNum()) && !document.querySelector('dialog[open]');
   setInterval(() => { if (stale()) refresh(); }, 60000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && stale()) refresh(); });
 
