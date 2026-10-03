@@ -7,13 +7,19 @@
 .td-row.open{box-shadow:0 0 0 3px rgba(251,191,36,.65),0 16px 34px rgba(8,5,30,.42)}
 .td-row .ocheck{margin-top:1px}
 .td-row .ocheck:disabled{cursor:default;opacity:.7}
-.td-row.s-done .ocheck{background:#22c55e;border-color:#22c55e}
 .td-row.s-carried .ocheck{border-style:dashed;border-color:#a3a7cc;color:#a3a7cc;background:#fff}
 .td-row.s-dropped .ocheck{border-style:dashed;border-color:#a3a7cc;color:#a3a7cc}
 .td-main{flex:1;min-width:0;display:grid;gap:7px}
 .td-title{border:0;background:none;padding:0;text-align:left;font:700 17px/1.35 var(--ui);color:#1e1b4b;overflow-wrap:anywhere;cursor:pointer}
 .td-title:hover{color:var(--i700)}
-.td-row.s-done .td-title,.td-row.s-dropped .td-title,.td-row.s-carried .td-title{color:#9a9dc0;text-decoration:line-through}
+.td-row.s-dropped .td-title,.td-row.s-carried .td-title{color:#9a9dc0;text-decoration:line-through}
+/* Done: the strip turns emerald (the gold edge stays), with no circle and no line through the title.
+   To undo, open the task and press Reopen. */
+.td-row.s-done{background:linear-gradient(180deg,#fbbf24,#d97706 60%,#b45309) left/6px 100% no-repeat,linear-gradient(135deg,#10b981,#059669);color:#fff;
+  transition:background .35s ease,transform .15s,box-shadow .15s}
+.td-row.s-done .ocheck{display:none}
+.td-row.s-done .td-title,.td-row.s-done .td-title:hover{color:#fff;text-decoration:none}
+.td-row.s-done :is(.td-chip,.td-up,.otag,.pj-chip){background:rgba(255,255,255,.2);color:#fff}
 .td-row.s-carried,.td-row.s-dropped{opacity:.75}
 .td-chips{display:flex;flex-wrap:wrap;gap:6px}
 .td-up{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:700;color:var(--i700);background:#eef0ff;border-radius:999px;padding:3px 10px}
@@ -67,3 +73,4 @@
 .td-notes:focus-visible{outline:none}
 .td-pad:focus-within::before{background:#6ee7b7}
 .td-row.td-lift{z-index:2;box-shadow:0 0 0 2px rgba(251,191,36,.65),0 22px 44px rgba(8,5,30,.35);transition:box-shadow .3s}
+.td-row.s-done .hm-star:not(.on){color:rgba(255,255,255,.75)}
