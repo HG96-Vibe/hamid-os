@@ -45,14 +45,20 @@
   function englishVoices() {
     return (voicesCache.length ? voicesCache : loadVoices()).filter(v => /^en[-_]/i.test(v.lang) || v.lang === 'en');
   }
+  // On iPhone and Mac the Enhanced / Premium download of a voice has the same name as the basic one
+  // ("Daniel"); only its voiceURI says which it is (com.apple.voice.enhanced.en-GB.Daniel). So voices are
+  // told apart, labelled and remembered by voiceURI.
+  const vid = v => v.voiceURI || v.name;
+  const quality = v => { const k = vid(v) + ' ' + v.name; return /premium/i.test(k) ? 'Premium' : /enhanced|neural|natural/i.test(k) ? 'Enhanced' : ''; };
+  const vlabel = v => { const q = quality(v); return v.name + (q && !new RegExp(q, 'i').test(v.name) ? ` (${q})` : ''); };
   function bestVoice() {
-    const all = englishVoices(), want = store('ds_voice_name');
-    if (want) { const v = all.find(x => x.name === want); if (v) return v; }
+    const all = englishVoices(), want = store('ds_voice_uri'), old = store('ds_voice_name');
+    if (want) { const v = all.find(x => vid(x) === want); if (v) return v; }
     const score = v => (/^en[-_]GB/i.test(v.lang) ? 40 : /^en[-_](IE|AU|NZ)/i.test(v.lang) ? 15 : /^en[-_]US/i.test(v.lang) ? 10 : 0)
-      + (/premium/i.test(v.name) ? 30 : /enhanced/i.test(v.name) ? 22 : 0)
+      + (quality(v) === 'Premium' ? 30 : quality(v) === 'Enhanced' ? 22 : 0) + (old && v.name === old ? 6 : 0)
       + (/Daniel|Serena|Kate|Arthur|Martha|Stephanie|Jamie|Oliver/i.test(v.name) ? 8 : 0)
       + (/Google UK English/i.test(v.name) ? 12 : 0) + (/Natural|Neural|Online/i.test(v.name) ? 14 : 0)
-      + (v.localService ? 2 : 0) - (/compact|eloquence|grandma|grandpa|bubbles|bad news|bells|boing|cellos|jester|organ|trinoids|whisper|zarvox|superstar|wobble|albert|fred|junior|ralph|kathy/i.test(v.name) ? 50 : 0);
+      + (v.localService ? 2 : 0) - (/eloquence|grandma|grandpa|bubbles|bad news|bells|boing|cellos|jester|organ|trinoids|whisper|zarvox|superstar|wobble|albert|fred|junior|ralph|kathy/i.test(v.name) ? 50 : 0);
     return all.slice().sort((a, b) => score(b) - score(a))[0] || null;
   }
 
@@ -411,12 +417,18 @@
     const langSel = el('select', { class: 'field vx-sel', 'aria-label': 'Language you speak', onchange: () => store('ds_voice_lang', langSel.value) },
       [['en-GB', 'English (UK)'], ['en-US', 'English (US)'], ['en-IN', 'English (India)'], ['en-AU', 'English (Australia)'], ['ur-PK', 'Urdu'], ['ar-SA', 'Arabic']].map(([v, l]) => el('option', { value: v }, l)));
     langSel.value = lang();
-    const voiceSel = el('select', { class: 'field vx-sel', 'aria-label': 'Reading voice', onchange: () => store('ds_voice_name', voiceSel.value) });
+    const voiceSel = el('select', { class: 'field vx-sel', 'aria-label': 'Reading voice', onchange: () => { store('ds_voice_uri', voiceSel.value); fillVoices(); } });
+    const found = el('p', { class: 'meta vx-tip' });
+    const rank = v => (quality(v) === 'Premium' ? 0 : quality(v) === 'Enhanced' ? 1 : 2);
     const fillVoices = () => {
-      const vs = englishVoices().slice().sort((a, b) => (/^en[-_]GB/i.test(b.lang) - /^en[-_]GB/i.test(a.lang)) || a.name.localeCompare(b.name));
-      const best = bestVoice();
-      voiceSel.replaceChildren(el('option', { value: '' }, 'Automatic' + (best ? ` (${best.name})` : '')), ...vs.map(v => el('option', { value: v.name }, `${v.name} · ${v.lang.replace('_', '-')}`)));
-      voiceSel.value = store('ds_voice_name') || '';
+      const vs = englishVoices().slice().sort((a, b) => (/^en[-_]GB/i.test(b.lang) - /^en[-_]GB/i.test(a.lang)) || rank(a) - rank(b) || a.name.localeCompare(b.name));
+      const best = bestVoice(), auto = !store('ds_voice_uri') || !vs.some(v => vid(v) === store('ds_voice_uri'));
+      voiceSel.replaceChildren(el('option', { value: '' }, 'Automatic' + (best && auto ? ` (${vlabel(best)})` : '')),
+        ...vs.map(v => el('option', { value: vid(v) }, `${vlabel(v)} · ${v.lang.replace('_', '-')}`)));
+      voiceSel.value = auto ? '' : store('ds_voice_uri');
+      const good = vs.filter(v => quality(v)).length;
+      found.textContent = `This device offers ${vs.length} English voice${vs.length === 1 ? '' : 's'}` + (good ? `, ${good} of them Enhanced or Premium.` : ', none of them Enhanced or Premium.')
+        + (isApple && !good ? ' If you have downloaded Enhanced voices and they don’t show here, iOS isn’t sharing them with web apps on this version.' : '');
     };
     fillVoices();
     if (TTS && TTS.addEventListener) TTS.addEventListener('voiceschanged', fillVoices);
@@ -432,7 +444,7 @@
       SR ? el('p', { class: 'meta vx-tip' }, 'Say “comma”, “full stop”, “question mark”, “new line” or “new paragraph” for punctuation. Tap the mic again to stop.') : null,
       el('h3', { class: 'vx-h' }, 'Listening'),
       TTS ? [
-        el('label', { class: 'pj-lbl vx-row' }, el('span', { class: 'lbl' }, 'Voice'), voiceSel),
+        el('label', { class: 'pj-lbl vx-row' }, el('span', { class: 'lbl' }, 'Voice'), voiceSel), found,
         el('div', { class: 'ds-row vx-row' }, el('span', { class: 'lbl', style: 'margin:0' }, 'Speed'), speed, out),
         el('div', { class: 'ds-row' }, el('button', { type: 'button', class: 'btn', onclick: () => { unlock(); play('Good morning, Hamid. This is how your day and your documents will sound.', 'Voice test'); } }, 'Test the voice')),
         isApple ? el('p', { class: 'meta vx-tip' }, 'For a more natural voice on iPhone: Settings → Accessibility → Read & Speak (or Spoken Content) → Voices → English, and download an “Enhanced” or “Premium” voice such as Daniel or Serena. Then pick it here.') : null
