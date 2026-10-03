@@ -77,13 +77,6 @@
   const mins = m => (m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? ' ' + (m % 60) + 'm' : ''}`);
   const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
   const weekday = s => fmt(s, { weekday: 'long' });
-  const ago = s => {
-    const n = dayNum(today()) - dayNum(s);
-    if (n < 14) return `${n} days ago`;
-    if (n < 60) return `${Math.round(n / 7)} weeks ago`;
-    const m = Math.round(n / 30.4);
-    return m < 12 ? `${m} months ago` : 'over a year ago';
-  };
   function lastMonthDay(s) {
     const d = parse(s), y = d.getFullYear(), m = d.getMonth() - 1;
     const last = new Date(y, m + 1, 0).getDate();
@@ -107,10 +100,7 @@
     for (let i = n - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
     return a;
   }
-  function pickQuote(quotes, oldWins, mode, hr) {
-    // Roughly one hour in five shows one of your own wins from at least two weeks back.
-    if (oldWins.length && hr % 5 === 2) return { win: oldWins[perm(oldWins.length, hr)[0]] };
-    const k = oldWins.length ? hr - Math.floor((hr + 2) / 5) : hr; // count only the quote hours, so none is skipped
+  function pickQuote(quotes, mode, k) {
     let pool = quotes.filter(x => x.slot === mode || x.slot === 'any');
     if (!pool.length) pool = quotes;
     if (!pool.length) return { body: 'Confine yourself to the present.', author: 'Marcus Aurelius' };
@@ -173,13 +163,12 @@
     const mode = modeNow(), d = workDay(), now = today();
     const ws = weekStart(d), ms = monthStart(d), from = addDays(d, -59), lm = lastMonthDay(d);
     const dayStartIso = parse(d).toISOString(), dayEndIso = parse(addDays(d, 1)).toISOString();
-    const [tasks, weekT, monthT, rvs, recentT, winsToday, winsLM, oldWins, stuck, inboxRes, quotesRaw, settingsRows, focusRows, nextWeekRes, nextMonthRes] = await Promise.all([
+    const [tasks, weekT, monthT, rvs, recentT, winsToday, winsLM, stuck, inboxRes, quotesRaw, settingsRows, focusRows, nextWeekRes, nextMonthRes] = await Promise.all([
       fetchTasks('day', d), fetchTasks('week', ws), fetchTasks('month', ms),
       q(sb.from('reviews').select('period_start,closed_at,notes,reflection,energy,focus').eq('horizon', 'day').gte('period_start', from).lte('period_start', d)),
       q(sb.from('tasks').select('period_start,status').eq('horizon', 'day').gte('period_start', from).lte('period_start', d).limit(5000)),
       q(sb.from('wins').select('*').eq('day', d).order('created_at')),
       q(sb.from('wins').select('id,day,body').gte('day', addDays(lm, -3)).lte('day', addDays(lm, 3)).order('day')),
-      q(sb.from('wins').select('id,day,body').lte('day', addDays(d, -14)).order('day', { ascending: false }).limit(300)),
       q(sb.from('tasks').select('id,title,period_start,horizon,carry_count').eq('status', 'open').gte('carry_count', 3).order('carry_count', { ascending: false }).limit(10)),
       sb.from('inbox').select('id', { count: 'exact', head: true }).is('done_at', null),
       q(sb.from('quotes').select('*').order('created_at').order('id')),
@@ -218,15 +207,15 @@
     const name = settings?.display_name ? `, ${settings.display_name}` : '';
     const h = hour();
     const hello = h < 6 ? `Working late${name}?` : h < 12 ? `Good morning${name}.` : h < 18 ? `Good afternoon${name}.` : `Good evening${name}.`;
-    const pick = pickQuote(quotes, oldWins, mode, hourNum());
-    const qText = pick.win ? pick.win.body : pick.body;
+    const pick = pickQuote(quotes, mode, hourNum());
+    const qText = pick.body;
     const hero = el('section', { class: `hm-hero ${mode}`, 'aria-label': 'Quote' },
       el('div', { class: 'hm-hero-top' },
         el('p', { class: 'hm-hello' }, hello),
         el('p', { class: 'hm-next' }, (mode === 'morning' ? 'Plan the day.' : 'Wind down.') + ` Next quote at ${nextHour()}.`)),
       el('figure', { class: 'hm-quote' + (qText.length > 120 ? ' long' : '') },
         el('blockquote', {}, qText),
-        pick.win ? el('figcaption', {}, `From you, ${ago(pick.win.day)}`) : pick.author ? el('figcaption', {}, pick.author) : null),
+        pick.author ? el('figcaption', {}, pick.author) : null),
       el('button', { class: 'hm-qedit', onclick: openQuotes }, 'Edit quotes'));
 
     /* ---- today's shape ---- */
@@ -513,7 +502,7 @@
         toast('Name saved.');
       } },
         el('div', { class: 'line' }, el('span', {}, 'Greet me as'), nameIn, el('button', { class: 'btn', type: 'submit' }, 'Save name'))),
-      el('p', { class: 'meta', style: 'margin:14px 0 10px' }, 'The quote at the top of Home changes every hour. Every quote shows once before any repeat, and every so often one of your own past wins takes its place.'),
+      el('p', { class: 'meta', style: 'margin:14px 0 10px' }, 'The quote at the top of Home changes every hour. Every quote shows once before any repeat.'),
       el('button', { class: 'btn', onclick: openQuotes }, 'Edit quotes'));
     const secs = wrap.querySelectorAll(':scope > section');
     if (secs.length >= 2) secs[1].after(sec); else wrap.append(sec);
