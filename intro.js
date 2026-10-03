@@ -1,11 +1,9 @@
-// Opening screen (desktop only): aurora photo, "Hamid OS", the signature, and the motto looping underneath.
+// Opening screen (computers and phones): aurora photo, "Hamid OS", the signature, and the motto looping underneath.
 // "Parade": each word sweeps in from the left to the centre, holds, then sweeps out to the right as the next arrives.
-// It stays until you click, tap or press a key. Phones skip it entirely.
+// It stays until you click, tap or press a key.
 (function () {
   var el = document.getElementById('intro');
   if (!el) return;
-  var phone = window.matchMedia && matchMedia('(max-width: 900px)').matches;
-  if (phone) { el.parentNode.removeChild(el); return; }
   var reduced = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   var stage = el.querySelector('.in-stage');
   var WORDS = [['plan', 'Plan.'], ['focus', 'Focus.'], ['do', 'Do.'], ['reflect', 'Reflect.'], ['win', 'Win.']];

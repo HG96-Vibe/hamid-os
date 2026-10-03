@@ -1,4 +1,4 @@
-/* Opening screen (desktop only): the aurora photo with "Hamid OS", the signature, and the motto looping underneath,
+/* Opening screen (computers and phones): the aurora photo with "Hamid OS", the signature, and the motto looping underneath,
    one word at a time sweeping in from the left and out to the right ("Parade"). It stays until you click, tap
    or press a key (intro.js). Each motto word has its own colour and typeface; the extra fonts load only here. */
 .intro{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;cursor:pointer;opacity:0;
@@ -21,7 +21,9 @@
 .in-line{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:.35em;font-size:calc(var(--in-size) * .55);white-space:nowrap}
 .in-line .in-w{position:static;font-size:inherit;opacity:1}
 .in-line .in-w[data-k="plan"]{font-size:1.15em}
-/* Phones and small tablets: no opening screen at all. */
-@media (max-width:900px){
-  .intro{display:none!important}
+/* Phones: keep the mountain in view and the words a touch smaller so "Reflect." fits comfortably. */
+@media (max-width:600px){
+  .intro{background-position:57% center}
+  .in-hold{--in-size:clamp(48px,14vw,64px);transform:translateY(-2vh)}
+  .in-line{font-size:calc(var(--in-size) * .4)}
 }
