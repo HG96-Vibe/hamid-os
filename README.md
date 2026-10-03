@@ -9,7 +9,7 @@ Live site: https://daily-sheet-six.vercel.app
 ## How it is hosted
 
 This is a **plain static site**: HTML, CSS, JavaScript and images, with **no build step, no framework and no
-`package.json`**. Vercel serves the files in this folder exactly as they are. To deploy, push to `main` and Vercel
+`package.json`** at the root. (The Create tab's editor is a pre-built file checked into the repo; see `tools/create-bundle`.) Vercel serves the files in this folder exactly as they are. To deploy, push to `main` and Vercel
 publishes it. Leave the Vercel project's Framework Preset as "Other" with the build command and output directory empty.
 
 `vercel.json` adds security headers to every response (no framing, no sniffing, no referrer, `noindex`, no camera,
@@ -31,6 +31,8 @@ features can be added without editing the core file. If `window.DS` is missing, 
 | --- | --- |
 | `app.js` | Core app. Supabase client, auth and 2FA, data access, routing, helpers, all exported on `window.DS`. |
 | `projects.js` | Projects tab: companies (and Personal) with projects inside them, progress from this month's outcomes, a page per project, the project picker used by Today / Week / Month, coloured project chips and a project filter. Loaded straight after `app.js`. |
+| `create.js` | Create tab: Word-style documents in folders (two levels), templates, an A4 page editor with fonts, sizes, colours, highlight, alignment, line spacing, lists, checklists, tables, links, page breaks and page setup, autosave (with a copy kept on the device until the save lands), focus mode, a 30-day Trash, and downloads as Word (.docx) or PDF (the browser's print, on the document's page size). Loads the editor bundle only when the tab opens. |
+| `create-editor.js`, `create-docx.js` | Bundled, minified third-party code for the Create tab: the TipTap editor (MIT) and the docx Word writer (MIT). Built from `tools/create-bundle` (see below); don't edit by hand. |
 | `outcomes.js` | Month tab: outcome cards, plus the shared side panel (`DS.openItem`) used by the Week and Today tabs. |
 | `week.js` | Week tab: priority cards, day tiles, week in numbers and the week review. |
 | `today.js` | Today tab: task strips, the close-out card and side tiles. |
@@ -49,7 +51,7 @@ features can be added without editing the core file. If `window.DS` is missing, 
 
 `styles.css` is the base stylesheet. Each of the others styles the matching feature: `outcomes.css`, `panel.css`
 (side panel), `week.css`, `today.css`, `reports.css`, `home.css`, `account.css`, `header.css`, `intro.css`, `brand.css`,
-`display.css`, `projects.css` and
+`display.css`, `projects.css`, `create.css` and
 `light.css` (light mode: redefines the colour tokens under `html.light` and keeps the review boxes dark). `mobile.css` holds the phone-layout overrides.
 
 ### Other files
@@ -64,6 +66,7 @@ features can be added without editing the core file. If `window.DS` is missing, 
 | `vercel.json` | Vercel headers (see above). |
 | `supabase/functions/reminders/index.ts` | Source of the `reminders` Edge Function. |
 | `supabase/schema.sql` | The database's public schema as first imported: tables, RLS policies, functions, the sign-up trigger and the cron job. |
+| `tools/create-bundle/` | Source and pinned versions for `create-editor.js` and `create-docx.js`. Run `tools/create-bundle/build.sh` (needs Node) to rebuild them. Not deployed: `.vercelignore` keeps `tools/` off the site. |
 | `supabase/migrations/` | Database changes made since, applied in date order on top of `schema.sql` (each with an `_undo` script). |
 
 ## Data and backend: Supabase
@@ -76,10 +79,14 @@ can be read or written only by the signed-in user who owns it, **and only when t
 authentication** (`aal = 'aal2'` in the JWT). A session that has signed in with a password but not completed 2FA can
 see nothing. A trigger on `auth.users` (`ds_only_one_user`) closes sign-ups after the first account.
 
+Documents from the Create tab live in `documents` (the writing as editor JSON, plus HTML and plain text for search
+and previews, the page set-up, folder and project), filed in `doc_folders` (two levels). Both have the same
+`owner_with_2fa` policy.
+
 Two database functions do the heavy lifting:
 
-- `ds_rollover(user, today)` moves unfinished month, week and day items into the current period (weekend days roll to
-  Monday), and moves their notes and links with them.
+- `ds_rollover(user, today)` moves unfinished month, week and day items into the current period (every day, weekends
+  included), and moves their notes and links with them.
 - `ds_report(user, kind, start)` builds the weekly or monthly report as JSON.
 
 ### The `reminders` Edge Function

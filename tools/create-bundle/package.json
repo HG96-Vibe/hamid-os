@@ -1,0 +1,20 @@
+{
+  "name": "hamid-os-create-bundle",
+  "private": true,
+  "description": "Builds create-editor.js and create-docx.js for the Create tab. Not part of the site; see build.sh.",
+  "dependencies": {
+    "@tiptap/core": "^3.31.4",
+    "@tiptap/extension-highlight": "^3.31.4",
+    "@tiptap/extension-list": "^3.31.4",
+    "@tiptap/extension-subscript": "^3.31.4",
+    "@tiptap/extension-superscript": "^3.31.4",
+    "@tiptap/extension-table": "^3.31.4",
+    "@tiptap/extension-text-align": "^3.31.4",
+    "@tiptap/extension-text-style": "^3.31.4",
+    "@tiptap/extensions": "^3.31.4",
+    "@tiptap/pm": "^3.31.4",
+    "@tiptap/starter-kit": "^3.31.4",
+    "docx": "^9.8.1",
+    "esbuild": "^0.28.2"
+  }
+}
