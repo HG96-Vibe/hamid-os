@@ -161,3 +161,25 @@
   .hm-hero.evening::before{width:44px;top:18px;right:18px}
   .hm-hero-top{padding-right:56px}
 }
+
+/* ---------- what the quote means: open text on the right half of the banner ----------
+   The quote itself is never moved or narrowed. home.js starts the note just past the quote's text (at least halfway across)
+   and turns it on (.qn-on) only when it fits without making the banner taller; otherwise the banner is unchanged. */
+.hm-qnote{display:none}
+@media (min-width:1100px){
+  .hm-hero.qn-on .hm-qnote{display:grid;gap:12px;position:absolute;left:53%;right:clamp(150px,12vw,230px);top:50%;transform:translateY(-50%);
+    border-left:2px solid var(--amber);padding:4px 0 4px 30px;color:#eef0ff}
+  .hm-hero.evening .hm-qnote{border-left-color:rgba(199,210,254,.55)}
+  .hm-qsrc{font:700 12px/1 var(--ui);letter-spacing:.12em;text-transform:uppercase;color:var(--amber)}
+  .hm-hero.evening .hm-qsrc{color:var(--i200)}
+  .hm-qnote p{margin:0;font-size:16.5px;line-height:1.55;max-width:62ch}
+  /* "Smaller" banner: the whole banner is scaled down, so the note is set larger to read at the same size */
+  html.ds-hero-smaller .hm-hero.qn-on .hm-qnote{gap:16px;padding-left:44px;border-left-width:3px}
+  html.ds-hero-smaller .hm-qsrc{font-size:20px}
+  html.ds-hero-smaller .hm-qnote p{font-size:27px}
+  /* "Compact" banner: smaller text, kept below the greeting row */
+  html.ds-hero-compact .hm-hero.qn-on .hm-qnote{top:50px;transform:none;gap:7px;padding-left:22px}
+  html.ds-hero-compact .hm-qsrc{font-size:11px}
+  html.ds-hero-compact .hm-qnote p{font-size:13.5px;line-height:1.45}
+  html.ds-hero-compact .hm-hero.qn-on .hm-quote{padding-right:0}
+}

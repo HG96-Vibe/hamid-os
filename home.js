@@ -84,6 +84,31 @@
     return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
   }
 
+  /* ---------- the quote's note: shown only when it fits inside the banner as it is ---------- */
+  function fitNote(hero) {
+    const note = hero && hero.querySelector('.hm-qnote');
+    if (!note || !hero.isConnected) return;
+    hero.classList.remove('qn-on');
+    const base = hero.offsetHeight;
+    hero.classList.add('qn-on');
+    if (getComputedStyle(note).display === 'none') return hero.classList.remove('qn-on'); // phone / narrow window
+    // start the note just past the widest line of the quote (the banner may be zoomed, so convert to its own units)
+    const range = document.createRange(); range.selectNodeContents(hero.querySelector('blockquote'));
+    let h = hero.getBoundingClientRect(), q = range.getBoundingClientRect();
+    const k = h.width / hero.offsetWidth || 1;
+    note.style.left = Math.round(Math.max(hero.offsetWidth * .5, (q.right - h.left) / k + 56)) + 'px';
+    h = hero.getBoundingClientRect();
+    const n = note.getBoundingClientRect(), pad = 6 * k;
+    const fits = hero.offsetHeight <= base + 1 && n.top >= h.top + pad && n.bottom <= h.bottom - pad && q.right <= n.left && n.width >= 260 * k;
+    if (!fits) hero.classList.remove('qn-on');
+  }
+  const fitAll = () => document.querySelectorAll('.hm-hero').forEach(fitNote);
+  let fitTimer = 0;
+  const fitSoon = () => { clearTimeout(fitTimer); fitTimer = setTimeout(fitAll, 120); };
+  window.addEventListener('resize', fitSoon);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitSoon);
+  new MutationObserver(fitSoon).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] }); // Display size changes
+
   /* ---------- quote rotation: a new quote every hour; every quote shows once before any repeats ---------- */
   const hourNum = () => dayNum(today()) * 24 + hour();
   const nextHour = () => { const h = (hour() + 1) % 24; return h === 0 ? 'midnight' : h === 12 ? 'noon' : (h % 12) + (h < 12 ? 'am' : 'pm'); };
@@ -209,6 +234,8 @@
     const hello = h < 6 ? `Working late${name}?` : h < 12 ? `Good morning${name}.` : h < 18 ? `Good afternoon${name}.` : `Good evening${name}.`;
     const pick = pickQuote(quotes, mode, hourNum());
     const qText = pick.body;
+    const note = window.DS_QUOTE_NOTES && window.DS_QUOTE_NOTES.get(pick.body);
+    const quoteNote = () => note ? el('div', { class: 'hm-qnote' }, el('span', { class: 'hm-qsrc' }, note[0]), el('p', {}, note[1])) : null;
     const hero = el('section', { class: `hm-hero ${mode}`, 'aria-label': 'Quote' },
       el('div', { class: 'hm-hero-top' },
         el('p', { class: 'hm-hello' }, hello),
@@ -216,6 +243,7 @@
       el('figure', { class: 'hm-quote' + (qText.length > 120 ? ' long' : '') },
         el('blockquote', {}, qText),
         pick.author ? el('figcaption', {}, pick.author) : null),
+      quoteNote(),
       el('button', { class: 'hm-qedit', onclick: openQuotes }, 'Edit quotes'));
 
     /* ---- today's shape ---- */
@@ -375,6 +403,7 @@
 
     const main = mode === 'morning' ? [attention, top3, capture, winsCard] : [closeCard, top3, attention];
     const side = mode === 'morning' ? [progress, consistency, noteCard, monthAgo] : [progress, consistency, capture, monthAgo, noteCard];
+    requestAnimationFrame(() => requestAnimationFrame(() => fitNote(hero)));
     return el('div', { class: `hm hm-${mode}` }, hero, shape,
       el('div', { class: 'hm-cols' }, el('div', { class: 'hm-col' }, main), el('aside', { class: 'hm-col' }, side)));
   }
@@ -530,7 +559,7 @@
 
   /* ---------- register and make Home the landing page ---------- */
   DS.views.home = viewHome;
-  DS.home = { pickQuote, modeNow, workDay, STARTER }; // exposed for testing
+  DS.home = { pickQuote, modeNow, workDay, STARTER, fitNote }; // exposed for testing
   const h = location.hash.slice(1);
   if (!h || h === 'home') {
     state.view = 'home';
