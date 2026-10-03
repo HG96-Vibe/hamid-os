@@ -266,7 +266,7 @@ html.cr-focus #app header.bar,html.cr-focus .dock,html.cr-focus .cr-meta,html.cr
 html.cr-focus .cr-tbw{top:calc(env(safe-area-inset-top,0px) + 10px)}
 html.cr-focus main{padding-top:18px}
 html.cr-focus .cr-title{text-align:center}
-html.cr-focus canvas.signal-bg{opacity:.35}
+html.cr-focus :is(canvas.signal-bg,canvas.signal-fx){opacity:.35}
 
 /* ---------- light mode ---------- */
 html.light .cr-menu,html.light .cr-pop{background:#fffdf9;border-color:rgba(30,27,75,.12);box-shadow:0 20px 40px rgba(60,50,20,.16)}

@@ -1,6 +1,6 @@
 /* Display size (display.js). Scales the app on computers; the dot background, intro and sign-in screen stay full size. */
 @media (min-width:901px){
-  html.ds-zoomed body>:not(canvas.signal-bg):not(#intro):not(script){zoom:var(--ds-zoom)}
+  html.ds-zoomed body>:not(canvas.signal-bg):not(canvas.signal-fx):not(#intro):not(script){zoom:var(--ds-zoom)}
   html.ds-zoomed #app:has(>.auth){zoom:1}
   /* keep the page as wide as before, so the smaller text has room to spread out */
   html.ds-zoomed main{max-width:calc(1140px / var(--ds-zoom))}

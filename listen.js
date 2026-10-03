@@ -107,6 +107,7 @@
     const sleepMenu = el('div', { class: 'ls-menu', hidden: true, role: 'menu' },
       [['Off', 0], ['In 30 minutes', 30], ['In 60 minutes', 60], ['In 90 minutes', 90], ['When the focus block ends', 'focus']].map(([l, v]) =>
         el('button', { type: 'button', role: 'menuitem', onclick: () => { sleepMenu.hidden = true; setSleep(v); } }, l)));
+    lastPaint = '';
     card = el('div', { class: 'ls-card', role: 'region', 'aria-label': 'Now playing' },
       el('div', { class: 'ls-vid' }, el('div', { class: 'ls-frame' }), el('div', { class: 'ls-err', hidden: true })),
       el('div', { class: 'ls-info' },
@@ -124,9 +125,14 @@
     dock.append(card);
     return card;
   }
+  let lastPaint = '';
   function paintCard() {
     if (!card) return;
     const it = P.item;
+    // only touch the page when something shown has changed (this runs whenever the app redraws)
+    const sig = [it && it.id, it && it.title, it && it.category, P.playing, P.big, P.byFocus, P.shuffleCat, P.sleepFocus, P.sleepAt && Math.round((P.sleepAt - Date.now()) / 60000), P.error, state.view === 'listen' && document.querySelectorAll('.ls-tile.playing').length].join('|');
+    if (sig === lastPaint) return;
+    lastPaint = sig;
     card.classList.toggle('big', P.big);
     document.body.classList.toggle('ls-big', P.big);
     card.querySelector('.ls-title').textContent = it ? (it.title || 'YouTube') : '';

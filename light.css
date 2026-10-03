@@ -51,7 +51,7 @@ html.light .dk-item.on{background:#1e1b4b;color:#fff}
 html.light .rp-btn{background:#fff;border-color:var(--line)}
 
 /* header: white capsule with a navy pill for the current page */
-html.light .bar{background:rgba(255,255,255,.88);border-color:rgba(30,27,75,.10);box-shadow:0 10px 30px rgba(60,50,20,.10)}
+html.light .bar{background:rgba(255,255,255,.96);border-color:rgba(30,27,75,.10);box-shadow:0 10px 30px rgba(60,50,20,.10)}
 html.light .bar .nav{background:#efede6}
 html.light .bar .nav button{color:#3f4370}
 html.light .bar .nav button:hover{color:#1e1b4b;background:rgba(30,27,75,.06)}
