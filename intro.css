@@ -9,7 +9,12 @@
 .intro::before{content:"";position:absolute;inset:0;opacity:0;will-change:opacity;
   background:radial-gradient(ellipse at 50% 45%,rgba(7,5,26,.25),rgba(7,5,26,.6) 75%),url(/intro-aurora.webp) center/cover no-repeat #07051a}
 .in-c{position:relative;z-index:1}
-.in-name>*{text-shadow:0 2px 14px rgba(0,0,0,.6)}
+/* Held "Hamid OS" screen: name, signature and motto 20% bigger than the brand defaults, with a soft shadow over the photo.
+   (More specific than brand.css so these win.) The stage is slid to the exact centre of the screen by intro.js. */
+.intro .in-name .in-os{font-size:clamp(46px,6vw,65px);text-shadow:0 2px 16px rgba(0,0,0,.6)}
+.intro .in-name .in-sig{font-size:clamp(62px,7.2vw,82px);text-shadow:0 2px 16px rgba(0,0,0,.6)}
+.intro .in-name .in-mt{font-size:18px;margin-top:14px;text-shadow:0 1px 10px rgba(0,0,0,.7)}
+.in-stage{transition:transform 1s cubic-bezier(.3,.7,.2,1)}
 .in-c{display:flex;flex-direction:column;align-items:center;width:100%;opacity:0;transition:opacity .25s ease}
 .intro.in-go .in-c{opacity:1}
 .in-bw{position:relative;width:150px;height:183px}
@@ -25,6 +30,7 @@
 .in-name{position:absolute;top:0;left:0;right:0;text-align:center;opacity:0;transform:translateY(16px);will-change:opacity,transform;
   font:800 clamp(38px,5vw,54px)/1.2 'Bricolage Grotesque','Segoe UI',system-ui,sans-serif;letter-spacing:-.035em;color:#fbbf24;text-shadow:0 0 24px rgba(251,191,36,.35)}
 @keyframes in-on{to{opacity:1}}
+@keyframes in-fade{to{opacity:0}}
 @keyframes in-away{to{opacity:0;transform:translateY(-10px)}}
 @keyframes in-flick{0%,22%{opacity:.9}25%{opacity:.05}30%{opacity:.82}44%{opacity:.78}48%{opacity:0}54%{opacity:.5}66%,100%{opacity:0}}
 @keyframes in-bloom{to{opacity:1;transform:scale(1)}}
@@ -40,6 +46,7 @@
   .in-go .in-list{animation:in-away .4s ease 2.6s forwards}
   .in-go .in-name{animation:in-settle .6s cubic-bezier(.2,.7,.2,1) 2.8s forwards}
   .intro.in-go::before{animation:in-on 1.4s ease 2.6s forwards}
+  .in-go .in-bw{animation:in-fade .8s ease 2.6s forwards}
 }
 @media (prefers-reduced-motion:reduce){
   .in-list{display:none}
@@ -47,6 +54,7 @@
   .in-dim{opacity:0}
   .in-glow{opacity:1;transform:none}
   .intro::before{opacity:1}
+  .in-bw{display:none}
 }
 /* Phones and small tablets: no opening screen at all. */
 @media (max-width:900px){
