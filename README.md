@@ -53,7 +53,7 @@ features can be added without editing the core file. If `window.DS` is missing, 
 
 `styles.css` is the base stylesheet. Each of the others styles the matching feature: `outcomes.css`, `panel.css`
 (side panel), `week.css`, `today.css`, `reports.css`, `home.css`, `account.css`, `header.css`, `intro.css`, `brand.css`,
-`display.css`, `projects.css`, `create.css`, `voice.css`, `listen.css` and
+`display.css`, `projects.css`, `create.css`, `voice.css`, `listen.css`, `done.css` (finished items turn emerald everywhere; loaded last) and
 `light.css` (light mode: redefines the colour tokens under `html.light` and keeps the review boxes dark). `mobile.css` holds the phone-layout overrides.
 
 ### Other files
