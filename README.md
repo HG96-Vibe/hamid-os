@@ -42,7 +42,7 @@ features can be added without editing the core file. If `window.DS` is missing, 
 | `display.js` | Display size for computers (Auto, 100%, 90%, 80% default, 70%) and the quote banner size on Home (Full, Smaller at 70% default, Compact), set in Settings and saved per device. |
 | `theme.js` | The "Chip" circuit background (colours follow the theme) and heading styling. Loads before `app.js` and does not depend on `window.DS`. |
 | `light.js` | Light mode ("Paper"). Dark is the default; the sun / moon button on the Home profile strip switches, saved per device. The refresh button under it reloads the whole app with the latest version. Loaded in `<head>` so there is no flash of the wrong theme. |
-| `intro.js` | Opening animation (desktop only, skippable). Standalone, does not depend on `window.DS`. |
+| `intro.js` | Opening animation (desktop only). Holds on the "Hamid OS" name until you click, tap or press a key. Standalone, does not depend on `window.DS`. |
 | `sw.js` | Service worker. Shows push notifications and opens the right page when one is tapped. |
 
 ### CSS
