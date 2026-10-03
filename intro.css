@@ -1,7 +1,7 @@
 /* Opening screen (computers and phones): the aurora photo with "Hamid OS", the signature, and the motto looping underneath,
    one word at a time sweeping in from the left and out to the right ("Parade"). It stays until you click, tap
    or press a key (intro.js). Each motto word has its own colour and typeface; the extra fonts load only here. */
-.intro{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;cursor:pointer;opacity:0;
+.intro{position:fixed;top:calc(-1 * env(safe-area-inset-top,0px));bottom:calc(-1 * env(safe-area-inset-bottom,0px));left:0;right:0;min-height:100lvh;z-index:1000;display:grid;place-items:center;cursor:pointer;opacity:0;
   background:radial-gradient(ellipse at 50% 45%,rgba(7,5,26,.25),rgba(7,5,26,.62) 75%),url(/intro-aurora.webp) center/cover no-repeat #07051a;
   transition:opacity .5s ease,visibility .5s ease;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
 .intro.in-on{opacity:1}

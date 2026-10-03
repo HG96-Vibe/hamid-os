@@ -38,6 +38,10 @@
     }, 750 + 900);
   }
 
+  // While this screen shows, tint the phone's status bar to match it (light mode would otherwise make it off-white).
+  var meta = document.querySelector('meta[name="theme-color"]'), tint = meta && meta.getAttribute('content');
+  if (meta) meta.setAttribute('content', '#07051a');
+
   function start() {
     if (started || done) return;
     started = true;
@@ -52,6 +56,7 @@
     if (done) return;
     done = true; clearTimeout(timer);
     el.classList.add('in-out');
+    if (meta) meta.setAttribute('content', document.documentElement.classList.contains('light') ? '#f6f4ef' : (tint === '#07051a' ? '#1e1b4b' : tint || '#1e1b4b'));
     setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 600);
   }
 
