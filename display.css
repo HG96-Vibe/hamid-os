@@ -24,3 +24,15 @@ html.ds-hero-compact .hm-qedit{bottom:16px;right:18px}
    full size (70% of the old 80% page) whatever the page size is set to */
 html.ds-hero-smaller .hm-hero{zoom:.7}
 @media (min-width:901px){html.ds-hero-smaller.ds-zoomed .hm-hero{zoom:calc(.56 / var(--ds-zoom))}}
+
+/* Display size slider in Settings */
+.ds-size{display:grid;gap:12px;max-width:520px}
+.ds-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.ds-range{flex:1 1 220px;min-width:0;accent-color:var(--amber-2);height:28px;cursor:pointer}
+.ds-range:disabled{opacity:.45;cursor:not-allowed}
+.ds-end{font:700 13px/1 var(--display);color:var(--muted)}
+.ds-end.big{font-size:20px}
+.ds-val{min-width:54px;padding:5px 10px;border-radius:999px;border:1px solid var(--line);background:var(--soft);font:800 15px/1 var(--display);text-align:center;font-variant-numeric:tabular-nums;color:var(--text)}
+.ds-auto{display:flex;align-items:center;gap:8px;font-size:14.5px;color:var(--text);cursor:pointer}
+.ds-auto input{width:18px;height:18px;accent-color:var(--amber-2)}
+.ds-reset{padding:6px 14px;font-size:13px}
