@@ -1140,7 +1140,7 @@
 
   /* ---------- wiring ---------- */
   DS.views.create = viewCreate;
-  DS.create = { load, ensure, open: openDoc, toDocx, forProject };
+  DS.create = { load, ensure, open: openDoc, toDocx, forProject, editor: () => (C.ed && C.ed.editor) || null };
 
   function ensureNav() {
     const nav = document.querySelector('#app nav.nav');
