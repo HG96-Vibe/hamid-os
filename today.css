@@ -74,3 +74,4 @@
 .td-pad:focus-within::before{background:#6ee7b7}
 .td-row.td-lift{z-index:2;box-shadow:0 0 0 2px rgba(251,191,36,.65),0 22px 44px rgba(8,5,30,.35);transition:box-shadow .3s}
 .td-row.s-done .hm-star:not(.on){color:rgba(255,255,255,.75)}
+.td-row.s-done .hm-star.on{color:#fde68a}
