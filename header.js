@@ -32,7 +32,7 @@
   }
 
   /* phone dock */
-  const MORE = [['month', 'Month'], ['projects', 'Projects'], ['create', 'Create'], ['inbox', 'Inbox'], ['insights', 'Insights'], ['history', 'History'], ['wins', 'Wins'], ['settings', 'Settings']];
+  const MORE = [['month', 'Month'], ['projects', 'Projects'], ['create', 'Create'], ['listen', 'Listen'], ['inbox', 'Inbox'], ['insights', 'Insights'], ['history', 'History'], ['wins', 'Wins'], ['settings', 'Settings']];
   const inboxCount = () => +(document.getElementById('inbox-count')?.textContent || 0);
   function openMore() {
     if (document.querySelector('dialog.dk-sheet')) return;

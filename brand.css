@@ -4,7 +4,7 @@
 .br-tag{font:600 10.5px/1 var(--ui);letter-spacing:.02em;color:var(--i200);white-space:nowrap}
 @media (min-width:901px){
   .brand{gap:11px;margin-right:2px}
-  .bar .nav button{padding:9px 11px}
+  .bar .nav button{padding:9px 8px}
 }
 @media (min-width:901px) and (max-width:1180px){
   .br-tag{display:none}

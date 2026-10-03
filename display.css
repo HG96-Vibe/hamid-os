@@ -4,7 +4,7 @@
   html.ds-zoomed #app:has(>.auth){zoom:1}
   /* keep the page as wide as before, so the smaller text has room to spread out */
   html.ds-zoomed main{max-width:calc(1140px / var(--ds-zoom))}
-  html.ds-zoomed .bar{width:min(calc(1140px / var(--ds-zoom)),calc(100% - 32px))}
+  html.ds-zoomed .bar{width:min(calc(1240px / var(--ds-zoom)),calc(100% - 32px))}
 }
 
 /* Compact quote banner on Home (any screen size) */

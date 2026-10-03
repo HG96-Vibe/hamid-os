@@ -4,12 +4,12 @@
 .dock{display:none}
 
 @media (min-width:901px){
-  .bar{width:min(1140px,calc(100% - 32px));margin:14px auto 0;top:calc(env(safe-area-inset-top,0px) + 12px);padding:8px 10px;gap:12px;flex-wrap:nowrap;
+  .bar{width:min(1240px,calc(100% - 32px));margin:14px auto 0;top:calc(env(safe-area-inset-top,0px) + 12px);padding:8px 10px;gap:12px;flex-wrap:nowrap;
     border-radius:999px;background:rgba(39,35,104,.9);border:1px solid rgba(199,210,254,.18);box-shadow:0 14px 34px rgba(8,5,30,.4)}
   .brand{font-size:0;gap:0;margin:0}
   .brand::before{width:44px;height:44px}
   .bar .nav{min-width:0;padding:4px;gap:2px;border-radius:999px;background:rgba(15,13,48,.55)}
-  .bar .nav button{border-radius:999px;padding:9px 13px;color:var(--i200)}
+  .bar .nav button{border-radius:999px;padding:9px 8px;font-size:14px;color:var(--i200)}
   .bar .nav button:hover{color:#fff;background:rgba(255,255,255,.06)}
   .bar .nav button[aria-current="page"]{background:#fff;color:var(--i950)}
   .bar .nav button[aria-current="page"]:hover{background:#fff;color:var(--i950)}

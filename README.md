@@ -42,6 +42,7 @@ features can be added without editing the core file. If `window.DS` is missing, 
 | `header.js` | The header: a floating capsule on desktop and a bottom dock on phones. |
 | `brand.js` | Hamid OS branding: the name and motto, the profile strip on Home, the tab title and sign-in screen. |
 | `voice.js` | Voice, using the browser's and phone's built-in features (free): a mic button above the keyboard whenever you type anywhere (speech recognition, with spoken punctuation such as "comma", "full stop", "new paragraph"), and read-aloud with a player bar: "Read my day" on Home, Listen on Today and Week, and Listen in a document (from the cursor). Reading uses a natural Microsoft voice (Ollie by default) through the `tts` Edge Function, falling back to the device's own voices; voice, speed, language and the mic button are set in Settings → Voice, saved per device. |
+| `listen.js` | Listen tab: YouTube videos and playlists to play while working, by category (Focus, Lo-fi, Ambient, Rain, Sleep, Watch later, or your own), with favourites and recently played. Paste a link to add; remove from a card's menu. The player sits in a dock at the bottom left, outside the page, so it keeps playing across tabs; long mixes resume where they stopped. Also: shuffle a category, repeat, a sleep timer, focus music that starts with a focus block and fades out when it ends, and built-in sounds (rain, brown and pink noise, waves, fireplace, wind) made with Web Audio. |
 | `display.js` | Display size for computers (a 60–120% slider, 88% default, or fit to the window) and the quote banner size on Home (Full, Smaller at 70% default, Compact), set in Settings and saved per device. |
 | `theme.js` | The "Chip" circuit background (colours follow the theme) and heading styling. Loads before `app.js` and does not depend on `window.DS`. |
 | `light.js` | Light mode ("Paper"). Dark is the default; the sun / moon button on the Home profile strip switches, saved per device. The refresh button under it reloads the whole app with the latest version. Loaded in `<head>` so there is no flash of the wrong theme. |
@@ -52,7 +53,7 @@ features can be added without editing the core file. If `window.DS` is missing, 
 
 `styles.css` is the base stylesheet. Each of the others styles the matching feature: `outcomes.css`, `panel.css`
 (side panel), `week.css`, `today.css`, `reports.css`, `home.css`, `account.css`, `header.css`, `intro.css`, `brand.css`,
-`display.css`, `projects.css`, `create.css`, `voice.css` and
+`display.css`, `projects.css`, `create.css`, `voice.css`, `listen.css` and
 `light.css` (light mode: redefines the colour tokens under `html.light` and keeps the review boxes dark). `mobile.css` holds the phone-layout overrides.
 
 ### Other files
