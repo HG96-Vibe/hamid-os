@@ -29,6 +29,8 @@
     more: '<circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/>',
     trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
+    down: '<path d="m6 9 6 6 6-6"/>',
+    up: '<path d="m6 15 6-6 6 6"/>',
     list: '<path d="M9 6h12M9 12h12M9 18h12"/><path d="m3 5 3 2-3 2zM3 15l3 2-3 2z" fill="currentColor"/>'
   };
   function icon(name, size = 18) {
@@ -80,7 +82,7 @@
      The player: a YouTube embed in a dock at the bottom left, outside the page
      ===================================================================== */
   const P = { item: null, yt: null, playing: false, ended: false, loop: store('ls_loop') === '1', shuffleCat: null, byFocus: false,
-    volume: Math.max(0, Math.min(100, Number(store('ls_volume') || 70))), big: false, sleepAt: 0, sleepFocus: false, saveTimer: null, duck: false, error: null };
+    volume: Math.max(0, Math.min(100, Number(store('ls_volume') || 70))), big: false, min: store('ls_min') === '1', sleepAt: 0, sleepFocus: false, saveTimer: null, duck: false, error: null };
   let api = null;
   const loadApi = () => api || (api = new Promise((ok, bad) => {
     if (window.YT && window.YT.Player) return ok(window.YT);
@@ -119,6 +121,7 @@
         b('ls-loop' + (P.loop ? ' on' : ''), 'Repeat when it ends', 'loop', e => { P.loop = !P.loop; store('ls_loop', P.loop ? '1' : '0'); e.currentTarget.classList.toggle('on', P.loop); }),
         el('span', { class: 'ls-volw' }, icon('volume', 15), vol),
         el('span', { class: 'ls-mw' }, b('ls-sleep', 'Sleep timer', 'moon', e => { e.stopPropagation(); sleepMenu.hidden = !sleepMenu.hidden; }), sleepMenu),
+        b('ls-mini', 'Minimise', 'down', () => setMin(!P.min)),
         b('ls-size', 'Bigger', 'expand', () => setBig(!P.big)),
         b('ls-x', 'Stop and close', 'close', () => closePlayer())));
     document.addEventListener('click', e => { if (!e.target.closest('.ls-mw')) sleepMenu.hidden = true; });
@@ -130,10 +133,13 @@
     if (!card) return;
     const it = P.item;
     // only touch the page when something shown has changed (this runs whenever the app redraws)
-    const sig = [it && it.id, it && it.title, it && it.category, P.playing, P.big, P.byFocus, P.shuffleCat, P.sleepFocus, P.sleepAt && Math.round((P.sleepAt - Date.now()) / 60000), P.error, state.view === 'listen' && document.querySelectorAll('.ls-tile.playing').length].join('|');
+    const sig = [it && it.id, it && it.title, it && it.category, P.playing, P.big, P.min, P.byFocus, P.shuffleCat, P.sleepFocus, P.sleepAt && Math.round((P.sleepAt - Date.now()) / 60000), P.error, state.view === 'listen' && document.querySelectorAll('.ls-tile.playing').length].join('|');
     if (sig === lastPaint) return;
     lastPaint = sig;
     card.classList.toggle('big', P.big);
+    card.classList.toggle('min', P.min && !P.big);
+    const mini = card.querySelector('.ls-mini');
+    mini.replaceChildren(icon(P.min ? 'up' : 'down', 17)); mini.title = P.min ? 'Show the player' : 'Minimise'; mini.setAttribute('aria-label', mini.title);
     document.body.classList.toggle('ls-big', P.big);
     card.querySelector('.ls-title').textContent = it ? (it.title || 'YouTube') : '';
     const bits = [it && it.category];
@@ -153,7 +159,9 @@
     if (P.error && it) err.replaceChildren(el('p', {}, P.error), el('a', { class: 'btn', href: watchUrl(it), target: '_blank', rel: 'noopener noreferrer' }, 'Open on YouTube'));
     document.querySelectorAll('.ls-tile').forEach(t => t.classList.toggle('playing', !!it && t.dataset.id === it.id));
   }
-  function setBig(on) { P.big = on; paintCard(); }
+  function setBig(on) { P.big = on; if (on) P.min = false; paintCard(); }
+  // Minimised: just a slim bar with play / pause, the title, next, show and close. The video keeps playing, unseen.
+  function setMin(on) { P.min = on; store('ls_min', on ? '1' : '0'); if (on) P.big = false; paintCard(); }
 
   async function play(it, opts = {}) {
     if (!it) return;
@@ -514,11 +522,11 @@
         el('button', { type: 'button', class: 'btn primary', onclick: addDialog }, '+ Add your first video'));
     } else if (L.cat === 'All') {
       const favs = items.filter(x => x.favourite);
-      const recent = items.filter(x => x.last_played_at).sort((a, b) => (b.last_played_at > a.last_played_at ? 1 : -1)).slice(0, 6);
+      const recent = items.filter(x => x.last_played_at).sort((a, b) => (b.last_played_at > a.last_played_at ? 1 : -1)).slice(0, 4);
       body = [sec('Favourites', favs, { cat: 'Favourites' }), !s ? sec('Recently played', recent) : null,
         ...cats().map(c => sec(c, items.filter(x => x.category === c), { cat: c }))];
     } else if (L.cat === 'Favourites') body = sec('Favourites', items.filter(x => x.favourite), { cat: 'Favourites', always: true, empty: 'Tap the star on anything to keep it here.' });
-    else if (L.cat === 'Recent') body = sec('Recently played', items.filter(x => x.last_played_at).sort((a, b) => (b.last_played_at > a.last_played_at ? 1 : -1)), { always: true, empty: 'Nothing played yet.' });
+    else if (L.cat === 'Recent') body = sec('Recently played', items.filter(x => x.last_played_at).sort((a, b) => (b.last_played_at > a.last_played_at ? 1 : -1)).slice(0, 4), { always: true, empty: 'Nothing played yet.' });
     else body = sec(L.cat, items.filter(x => x.category === L.cat), { cat: L.cat, always: true, empty: `Nothing in ${L.cat} yet. Add a video and pick ${L.cat}.` });
     pageEl.querySelector('.ls-chips').replaceChildren(...chips.map(c => el('button', { type: 'button', class: 'ls-chip' + (L.cat === c ? ' on' : ''), 'aria-pressed': String(L.cat === c),
       onclick: () => { L.cat = c; store('ls_cat', c); drawPage(); } }, c)));
