@@ -83,8 +83,8 @@ html.light.ds-hero-compact .hm-hero.evening::before{box-shadow:-12px 8px 0 0 #81
 .lt-toggle:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
 .lt-toggle svg{width:20px;height:20px}
 html.light .lt-toggle{color:#4338ca;background:#f4f2ec}
-html.light .lt-refresh{color:#4b4f7a}
-.lt-refresh{color:var(--muted)}
-.lt-refresh.spin svg{animation:lt-spin .8s linear infinite}
 @keyframes lt-spin{to{transform:rotate(360deg)}}
-@media (prefers-reduced-motion:reduce){.lt-refresh.spin svg{animation:none}}
+#app .brand{cursor:pointer;border-radius:12px}
+#app .brand:focus-visible{outline:3px solid #fbbf24;outline-offset:4px}
+#app .brand.br-spin::before{animation:lt-spin .8s linear infinite}
+@media (prefers-reduced-motion:reduce){#app .brand.br-spin::before{animation:none}}

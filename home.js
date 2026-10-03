@@ -417,12 +417,6 @@
     let b = nav.querySelector('[data-home]');
     if (!b) { b = el('button', { 'data-home': '', onclick: () => DS.go('home') }, 'Home'); nav.prepend(b); }
     if (state.view === 'home') b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
-    const brand = document.querySelector('#app .brand');
-    if (brand && !brand.dataset.home) {
-      brand.dataset.home = '1'; brand.setAttribute('role', 'link'); brand.tabIndex = 0; brand.title = 'Home'; brand.style.cursor = 'pointer';
-      brand.addEventListener('click', () => DS.go('home'));
-      brand.addEventListener('keydown', e => { if (e.key === 'Enter') DS.go('home'); });
-    }
   }
 
   // Re-sort Today's rows in place (starred first, then the usual order) and let each row glide to its new spot.

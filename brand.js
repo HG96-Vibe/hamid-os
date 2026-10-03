@@ -15,7 +15,8 @@
     if (brand && !brand.dataset.br) {
       brand.dataset.br = '1';
       brand.replaceChildren(el('span', { class: 'br-txt' }, el('span', { class: 'br-name' }, NAME), el('span', { class: 'br-tag' }, MOTTO)));
-      brand.setAttribute('aria-label', NAME + ', go to Home');
+      brand.setAttribute('role', 'button'); brand.tabIndex = 0;
+      brand.setAttribute('aria-label', 'Refresh ' + NAME); brand.title = 'Refresh (\u2318R)';
     }
     const h1 = document.querySelector('#app .authcard h1');
     if (h1 && h1.textContent === 'Daily Sheet') h1.textContent = NAME;
