@@ -11,6 +11,7 @@
 
   const DEFAULT_CATS = ['Focus', 'Lo-fi', 'Ambient', 'Rain', 'Sleep', 'Watch later'];
   const WATCH = 'Watch later';
+  const RECENT_MAX = 10, ROW_MAX = 20; // Recently played keeps the last 10; each row on All shows up to 20 (the category's own tab shows everything)
   const store = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { return null; } };
   const desktop = () => window.matchMedia('(min-width:901px)').matches;
 
@@ -518,6 +519,8 @@
     // each category is one row of four that scrolls sideways (arrows appear when there are more)
     const sec = (title, list, opts = {}) => {
       if (!list.length && !opts.always) return null;
+      const total = list.length, more = opts.max && total > opts.max ? opts.go : null;
+      if (opts.max) list = list.slice(0, opts.max);
       const row = list.length ? el('div', { class: 'ls-grid' }, list.map(tile)) : null;
       const arrow = (dir, label) => el('button', { type: 'button', class: 'ls-arrow', 'aria-label': label, title: label, hidden: list.length <= 4,
         onclick: () => row.scrollBy({ left: dir * row.clientWidth, behavior: 'smooth' }) }, dir < 0 ? '‹' : '›');
@@ -528,8 +531,9 @@
         if (window.ResizeObserver) new ResizeObserver(edge).observe(row); else setTimeout(edge, 100); // once it is on screen, and on resize
       }
       return el('section', { class: 'ls-sec' },
-        el('div', { class: 'ls-sech' }, el('h2', {}, title), el('span', { class: 'ls-n' }, String(list.length)),
+        el('div', { class: 'ls-sech' }, el('h2', {}, title), el('span', { class: 'ls-n' }, String(total)),
           opts.cat && list.length > 1 ? el('button', { type: 'button', class: 'btn ls-small', onclick: () => { const it = pick(opts.cat); if (it) play(it, { shuffleCat: opts.cat, big: false }); } }, icon('shuffle', 15), ' Shuffle') : null,
+          more ? el('button', { type: 'button', class: 'btn ls-small', onclick: () => { L.cat = more; store('ls_cat', more); drawPage(); window.scrollTo(0, 0); } }, `See all ${total}`) : null,
           el('span', { class: 'ls-arrows' }, prev, next)),
         row || el('p', { class: 'ls-empty' }, opts.empty || 'Nothing here yet.'));
     };
@@ -540,11 +544,11 @@
         el('button', { type: 'button', class: 'btn primary', onclick: addDialog }, '+ Add your first video'));
     } else if (L.cat === 'All') {
       const favs = items.filter(x => x.favourite);
-      const recent = items.filter(x => x.last_played_at).sort((a, b) => (b.last_played_at > a.last_played_at ? 1 : -1)).slice(0, 4);
-      body = [sec('Favourites', favs, { cat: 'Favourites' }), !s ? sec('Recently played', recent) : null,
-        ...cats().map(c => sec(c, items.filter(x => x.category === c), { cat: c }))];
+      const recent = items.filter(x => x.last_played_at).sort((a, b) => (b.last_played_at > a.last_played_at ? 1 : -1)).slice(0, RECENT_MAX);
+      body = [sec('Favourites', favs, { cat: 'Favourites', max: ROW_MAX, go: 'Favourites' }), !s ? sec('Recently played', recent) : null,
+        ...cats().map(c => sec(c, items.filter(x => x.category === c), { cat: c, max: ROW_MAX, go: c }))];
     } else if (L.cat === 'Favourites') body = sec('Favourites', items.filter(x => x.favourite), { cat: 'Favourites', always: true, empty: 'Tap the star on anything to keep it here.' });
-    else if (L.cat === 'Recent') body = sec('Recently played', items.filter(x => x.last_played_at).sort((a, b) => (b.last_played_at > a.last_played_at ? 1 : -1)).slice(0, 4), { always: true, empty: 'Nothing played yet.' });
+    else if (L.cat === 'Recent') body = sec('Recently played', items.filter(x => x.last_played_at).sort((a, b) => (b.last_played_at > a.last_played_at ? 1 : -1)).slice(0, RECENT_MAX), { always: true, empty: 'Nothing played yet.' });
     else body = sec(L.cat, items.filter(x => x.category === L.cat), { cat: L.cat, always: true, empty: `Nothing in ${L.cat} yet. Add a video and pick ${L.cat}.` });
     pageEl.querySelector('.ls-chips').replaceChildren(...chips.map(c => el('button', { type: 'button', class: 'ls-chip' + (L.cat === c ? ' on' : ''), 'aria-pressed': String(L.cat === c),
       onclick: () => { L.cat = c; store('ls_cat', c); drawPage(); } }, c)));
