@@ -19,6 +19,7 @@
   }
   var waits = [];
   try { if (document.fonts && document.fonts.load) waits.push(document.fonts.load('800 40px "Bricolage Grotesque"')); } catch (e) {}
+  try { var bg = new Image(); bg.src = '/intro-aurora.webp'; if (bg.decode) waits.push(bg.decode().catch(function () {})); } catch (e) {}
   var img = el.querySelector('.in-bulb');
   if (img && img.decode) waits.push(img.decode().catch(function () {}));
   if (window.Promise && waits.length) Promise.all(waits).then(go, go);
