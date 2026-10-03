@@ -1,61 +1,26 @@
-/* Opening animation (option C), phone-safe version.
-   Nothing waits on fonts or the image mid-animation: it starts once both are ready (or after 0.8s at most).
-   The bulb "switches on" by fading a dark cover over it instead of animating a CSS filter, and the name uses a plain colour,
-   because iPhone Safari flickers when filters, masks and gradient text are animated. Only opacity and transform move. */
-.intro{position:fixed;inset:0;z-index:1000;background:#07051a;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  transition:opacity .5s ease,visibility .5s ease;cursor:pointer;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
+/* Opening screen (desktop only): the aurora photo with "Hamid OS", the signature, and the motto looping underneath,
+   one word at a time sweeping in from the left and out to the right ("Parade"). It stays until you click, tap
+   or press a key (intro.js). Each motto word has its own colour and typeface; the extra fonts load only here. */
+.intro{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;cursor:pointer;opacity:0;
+  background:radial-gradient(ellipse at 50% 45%,rgba(7,5,26,.25),rgba(7,5,26,.62) 75%),url(/intro-aurora.webp) center/cover no-repeat #07051a;
+  transition:opacity .5s ease,visibility .5s ease;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
+.intro.in-on{opacity:1}
 .intro.in-out{opacity:0;visibility:hidden;pointer-events:none}
-/* Aurora photo behind the held "Hamid OS" screen: fades in as the name appears, with a soft dark wash so the name stays readable. */
-.intro::before{content:"";position:absolute;inset:0;opacity:0;will-change:opacity;
-  background:radial-gradient(ellipse at 50% 45%,rgba(7,5,26,.25),rgba(7,5,26,.6) 75%),url(/intro-aurora.webp) center/cover no-repeat #07051a}
-.in-c{position:relative;z-index:1}
-/* Held "Hamid OS" screen: name, signature and motto 20% bigger than the brand defaults, with a soft shadow over the photo.
-   (More specific than brand.css so these win.) The stage is slid to the exact centre of the screen by intro.js. */
-.intro .in-name .in-os{font-size:clamp(46px,6vw,65px);text-shadow:0 2px 16px rgba(0,0,0,.6)}
-.intro .in-name .in-sig{font-size:clamp(62px,7.2vw,82px);text-shadow:0 2px 16px rgba(0,0,0,.6)}
-.intro .in-name .in-mt{font-size:18px;margin-top:14px;text-shadow:0 1px 10px rgba(0,0,0,.7)}
-.in-stage{transition:transform 1s cubic-bezier(.3,.7,.2,1)}
-.in-c{display:flex;flex-direction:column;align-items:center;width:100%;opacity:0;transition:opacity .25s ease}
-.intro.in-go .in-c{opacity:1}
-.in-bw{position:relative;width:150px;height:183px}
-.in-glow{position:absolute;left:50%;top:38%;width:300px;height:300px;margin:-150px 0 0 -150px;border-radius:50%;opacity:0;transform:scale(.4);will-change:opacity,transform;
-  background:radial-gradient(circle,rgba(253,224,71,.55) 0%,rgba(217,119,6,.28) 35%,rgba(7,5,26,0) 68%)}
-.in-bulb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
-  -webkit-mask-image:radial-gradient(closest-side,#000 55%,transparent 100%);mask-image:radial-gradient(closest-side,#000 55%,transparent 100%)}
-.in-dim{position:absolute;inset:-2px;background:#07051a;opacity:.9;will-change:opacity}
-.in-stage{position:relative;margin-top:22px;width:100%}
-.in-list{display:flex;flex-direction:column;align-items:center;gap:2px;will-change:opacity,transform}
-.in-li{position:relative;font:800 clamp(34px,4.6vw,48px)/1.12 'Bricolage Grotesque','Segoe UI',system-ui,sans-serif;letter-spacing:-.035em;color:rgba(255,255,255,.14)}
-.in-li::after{content:attr(data-w);position:absolute;inset:0;color:#fbbf24;opacity:0;will-change:opacity}
-.in-name{position:absolute;top:0;left:0;right:0;text-align:center;opacity:0;transform:translateY(16px);will-change:opacity,transform;
-  font:800 clamp(38px,5vw,54px)/1.2 'Bricolage Grotesque','Segoe UI',system-ui,sans-serif;letter-spacing:-.035em;color:#fbbf24;text-shadow:0 0 24px rgba(251,191,36,.35)}
-@keyframes in-on{to{opacity:1}}
-@keyframes in-fade{to{opacity:0}}
-@keyframes in-away{to{opacity:0;transform:translateY(-10px)}}
-@keyframes in-flick{0%,22%{opacity:.9}25%{opacity:.05}30%{opacity:.82}44%{opacity:.78}48%{opacity:0}54%{opacity:.5}66%,100%{opacity:0}}
-@keyframes in-bloom{to{opacity:1;transform:scale(1)}}
-@keyframes in-settle{to{opacity:1;transform:none}}
-@media (prefers-reduced-motion:no-preference){
-  .in-go .in-l0::after{animation:in-on .3s ease .2s forwards}
-  .in-go .in-l1::after{animation:in-on .3s ease .52s forwards}
-  .in-go .in-l2::after{animation:in-on .3s ease .84s forwards}
-  .in-go .in-l3::after{animation:in-on .3s ease 1.16s forwards}
-  .in-go .in-l4::after{animation:in-on .3s ease 1.48s forwards}
-  .in-go .in-dim{animation:in-flick .9s linear 1.8s forwards}
-  .in-go .in-glow{animation:in-bloom .7s ease-out 2.2s forwards}
-  .in-go .in-list{animation:in-away .4s ease 2.6s forwards}
-  .in-go .in-name{animation:in-settle .6s cubic-bezier(.2,.7,.2,1) 2.8s forwards}
-  .intro.in-go::before{animation:in-on 1.4s ease 2.6s forwards}
-  .in-go .in-bw{animation:in-fade .8s ease 2.6s forwards}
-}
-@media (prefers-reduced-motion:reduce){
-  .in-list{display:none}
-  .in-name{position:static;display:block;opacity:1;transform:none}
-  .in-dim{opacity:0}
-  .in-glow{opacity:1;transform:none}
-  .intro::before{opacity:1}
-  .in-bw{display:none}
-}
+.in-hold{display:grid;justify-items:center;text-align:center;width:100%;padding:0 16px;transform:translateY(-3vh);
+  --in-size:clamp(56px,7vw,92px)}
+.in-os{font:800 clamp(46px,6vw,65px)/1.1 'Bricolage Grotesque','Segoe UI',system-ui,sans-serif;letter-spacing:-.035em;color:#fff;text-shadow:0 2px 16px rgba(0,0,0,.6)}
+.in-sig{margin-top:2px;font:400 clamp(62px,7.2vw,82px)/1 'Mrs Saint Delafield',cursive;color:#fbbf24;text-shadow:0 2px 16px rgba(0,0,0,.6)}
+.in-stage{position:relative;width:100%;height:calc(var(--in-size) * 1.5);margin-top:clamp(18px,3vh,34px);overflow:hidden}
+.in-w{position:absolute;top:50%;left:50%;white-space:nowrap;line-height:1;font-size:var(--in-size);text-shadow:0 4px 24px rgba(0,0,0,.45);opacity:0}
+.in-w[data-k="plan"]{color:#fbbf24;font-family:'Bebas Neue','Arial Narrow',sans-serif;font-size:calc(var(--in-size) * 1.15);letter-spacing:.02em}
+.in-w[data-k="focus"]{color:#5eead4;font-family:'Playfair Display',Georgia,serif;font-style:italic;font-weight:900}
+.in-w[data-k="do"]{color:#fb7185;font-family:'Archivo Black','Arial Black',sans-serif}
+.in-w[data-k="reflect"]{color:#c4b5fd;font-family:'DM Serif Display',Georgia,serif;font-style:italic}
+.in-w[data-k="win"]{color:#bef264;font-family:'Bricolage Grotesque','Segoe UI',system-ui,sans-serif;font-weight:800;letter-spacing:-.04em}
+/* reduced motion: the whole motto sits still in one line */
+.in-line{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:.35em;font-size:calc(var(--in-size) * .55);white-space:nowrap}
+.in-line .in-w{position:static;font-size:inherit;opacity:1}
+.in-line .in-w[data-k="plan"]{font-size:1.15em}
 /* Phones and small tablets: no opening screen at all. */
 @media (max-width:900px){
   .intro{display:none!important}

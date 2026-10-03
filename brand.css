@@ -36,8 +36,3 @@
   .pf-streak small{font-size:12px}
 }
 
-/* end of the desktop opening animation: Hamid OS, signature, motto */
-.in-name .in-os,.in-name .in-sig,.in-name .in-mt{display:block}
-.in-name .in-os{font:800 clamp(38px,5vw,54px)/1.1 'Bricolage Grotesque','Segoe UI',system-ui,sans-serif;letter-spacing:-.035em;color:#fff;text-shadow:none}
-.in-name .in-sig{margin-top:2px;font:400 clamp(52px,6vw,68px)/1 'Mrs Saint Delafield',cursive;letter-spacing:0;color:#fbbf24}
-.in-name .in-mt{margin-top:12px;font:600 15px/1 'Source Sans 3',system-ui,sans-serif;letter-spacing:.04em;color:#c7d2fe;text-shadow:none}

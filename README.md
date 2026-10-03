@@ -42,7 +42,7 @@ features can be added without editing the core file. If `window.DS` is missing, 
 | `display.js` | Display size for computers (Auto, 100%, 90%, 80% default, 70%) and the quote banner size on Home (Full, Smaller at 70% default, Compact), set in Settings and saved per device. |
 | `theme.js` | The "Chip" circuit background (colours follow the theme) and heading styling. Loads before `app.js` and does not depend on `window.DS`. |
 | `light.js` | Light mode ("Paper"). Dark is the default; the sun / moon button on the Home profile strip switches, saved per device. The refresh button under it reloads the whole app with the latest version. Loaded in `<head>` so there is no flash of the wrong theme. |
-| `intro.js` | Opening animation (desktop only). Holds on the "Hamid OS" name until you click, tap or press a key. Standalone, does not depend on `window.DS`. |
+| `intro.js` | Opening screen (desktop only): the aurora photo with "Hamid OS", the signature and the motto looping one word at a time ("Parade"). Stays until you click, tap or press a key. |
 | `sw.js` | Service worker. Shows push notifications and opens the right page when one is tapped. |
 
 ### CSS
@@ -59,7 +59,7 @@ features can be added without editing the core file. If `window.DS` is missing, 
 | `index.html` | The single page. Loads the fonts, the stylesheets, the Supabase JS library (from jsDelivr) and the scripts, in order. |
 | `manifest.webmanifest` | PWA manifest (name, colours, icons). |
 | `icon-v2.png`, `icon-192.png`, `icon-512.png`, `apple-touch-icon.png`, `apple-touch-icon-precomposed.png`, `favicon.ico` | App icon. All six are the same image. |
-| `intro-bulb.jpg` | Bulb image used by the opening animation. |
+| `intro-aurora.webp` | Aurora and waterfall photo behind the opening screen. |
 | `hero-storm.webp` | Hero image used by the side panel (`panel.css`). |
 | `vercel.json` | Vercel headers (see above). |
 | `supabase/functions/reminders/index.ts` | Source of the `reminders` Edge Function. |
