@@ -1,4 +1,4 @@
-/* Money tab (money.js): books, quick add, budgets, charts, payments and net worth.
+/* Capital tab (money.js): books, quick add, budgets, charts, payments and net worth.
    Figures sit on white cards in both themes; money in is emerald, money out indigo. */
 .mn{--mn-in:#059669;--mn-out:#4f46e5;--mn-ink:#1e1b4b;--mn-muted:#5b5f86;--mn-faint:#8a8db0;--mn-line:rgba(30,27,75,.09);--mn-over:#b91c1c;--mn-warn:#b45309}
 .mn-ic{display:inline-grid;place-items:center;flex:none}

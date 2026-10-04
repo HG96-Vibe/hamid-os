@@ -1,4 +1,4 @@
-// Money tab: where your money goes, budgets, and net worth.
+// Capital tab (opens at #capital; the files keep the name money): where your money goes, budgets, and net worth.
 // - Three separate books: Personal, Augustova and PCTR (the top-level companies in Projects, in their colours).
 // - Add as you go ("12.50 lunch", "+2,500 salary") and import your bank's statement file each week.
 // - Categories with monthly budgets; it learns your categories from the shops and payees you sort.
@@ -95,8 +95,8 @@
     await loadBooks();
     page = el('div', { class: 'mn' + (M.hide ? ' mn-hide' : '') });
     if (!M.books.length) {
-      page.append(el('div', { class: 'head' }, el('h1', {}, 'Money')),
-        el('p', { class: 'meta' }, 'Add your companies and Personal area in Projects first. Each one gets its own money book here.'));
+      page.append(el('div', { class: 'head' }, el('h1', {}, 'Capital')),
+        el('p', { class: 'meta' }, 'Add your companies and Personal area in Projects first. Each one gets its own book here.'));
       return page;
     }
     if (M.view === 'book') await loadBook(); else await loadWorth();
@@ -123,13 +123,13 @@
     const eye = el('button', { type: 'button', class: 'btn mn-eye', 'aria-pressed': String(M.hide), title: M.hide ? 'Show amounts' : 'Hide amounts',
       onclick: () => { M.hide = !M.hide; store('mn_hide', M.hide ? '1' : '0'); draw(); } }, icon(M.hide ? 'eyeOff' : 'eye'), el('span', {}, M.hide ? 'Show amounts' : 'Hide amounts'));
     return el('div', { class: 'mn-top' },
-      el('div', { class: 'head mn-head' }, el('h1', {}, 'Money'),
+      el('div', { class: 'head mn-head' }, el('h1', {}, 'Capital'),
         el('div', { class: 'mn-actions' },
           M.view === 'book' ? [
             el('button', { type: 'button', class: 'btn', onclick: importDialog }, icon('upload'), el('span', {}, 'Import statement')),
             el('button', { type: 'button', class: 'btn', onclick: catsDialog }, icon('sliders'), el('span', {}, 'Categories & budgets'))] : null,
           eye)),
-      el('div', { class: 'mn-books', role: 'tablist', 'aria-label': 'Money books' },
+      el('div', { class: 'mn-books', role: 'tablist', 'aria-label': 'Books' },
         M.books.map(b => el('button', { type: 'button', role: 'tab', class: 'mn-book' + (M.view === 'book' && M.book === b.id ? ' on' : ''),
           'aria-selected': String(M.view === 'book' && M.book === b.id), style: `--pj:${DS.proj.color(b.id)}`, onclick: () => switchBook(b.id) },
           el('span', { class: 'mn-dot', 'aria-hidden': 'true' }), b.name)),
@@ -700,10 +700,11 @@
   let resizeT = 0, lastW = window.innerWidth;
   window.addEventListener('resize', () => {
     clearTimeout(resizeT);
-    resizeT = setTimeout(() => { if (state.view === 'money' && page && page.isConnected && Math.abs(window.innerWidth - lastW) > 40 && !document.querySelector('dialog.mn-dlg')) { lastW = window.innerWidth; draw(); } }, 250);
+    resizeT = setTimeout(() => { if (state.view === 'capital' && page && page.isConnected && Math.abs(window.innerWidth - lastW) > 40 && !document.querySelector('dialog.mn-dlg')) { lastW = window.innerWidth; draw(); } }, 250);
   });
 
-  /* ---------- wiring: the Money tab in the menu ---------- */
+  /* ---------- wiring: the Capital tab in the menu ---------- */
+  DS.views.capital = viewMoney;
   DS.views.money = viewMoney;
   DS.money = { core: C, state: M };
   function ensureNav() {
@@ -711,11 +712,11 @@
     if (!nav) return;
     let b = nav.querySelector('[data-money]');
     if (!b) {
-      b = el('button', { 'data-money': '', onclick: () => DS.go('money') }, 'Money');
+      b = el('button', { 'data-money': '', onclick: () => DS.go('capital') }, 'Capital');
       const after = nav.querySelector('[data-listen]') || nav.querySelector('[data-create]');
       if (after) after.after(b); else nav.append(b);
     }
-    if (state.view === 'money') b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+    if (state.view === 'capital') b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   }
   let pending = false;
   const app = document.getElementById('app');
@@ -724,8 +725,10 @@
     pending = true;
     requestAnimationFrame(() => { pending = false; ensureNav(); });
   }).observe(app, { childList: true, subtree: true });
-  if (location.hash.slice(1) === 'money') {
-    state.view = 'money';
-    if (state.user && document.getElementById('main')) DS.go('money');
+  // the tab is called Capital (#capital); old #money links still open it
+  if (location.hash.slice(1) === 'capital' || location.hash.slice(1) === 'money') {
+    state.view = 'capital';
+    try { history.replaceState(null, '', '#capital'); } catch (e) {}
+    if (state.user && document.getElementById('main')) DS.go('capital');
   }
 })();
