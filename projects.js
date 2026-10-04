@@ -212,6 +212,7 @@
         el('button', { class: 'btn', onclick: () => editDialog(p) }, 'Edit')),
       p.goal ? el('p', { class: 'meta pj-goal-big' }, p.goal) : null,
       hero(s),
+      briefBox(p),
       el('form', { class: 'pj-addrow', onsubmit: add }, addTitle, addWhen, el('button', { class: 'btn primary', type: 'submit' }, 'Add')),
       el('p', { class: 'meta pj-dndhint' }, 'Drag a task onto another list to move it between this month, this week and today.'),
       el('div', { class: 'pj-page-grid' },
@@ -224,6 +225,94 @@
       DS.create ? DS.create.forProject(family(p.id), p.id) : null,
       isRoot(p) && kids(p.id).length ? el('section', { class: 'section' }, el('h2', {}, 'Projects in ' + p.name),
         el('div', { class: 'pj-links' }, kids(p.id).map(k => el('button', { class: 'pill pj-link', style: `--pj:${color(k.id)}`, onclick: () => openProject(k.id) }, k.name)))) : null);
+  }
+
+  /* ---------- the project brief: your own words, one size, bold with Cmd+B ----------
+     Stored as plain text with **bold** marks, so nothing else (sizes, links, pasted styles) can creep in. */
+  const escHtml = t => t.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const briefHtml = t => escHtml(t || '').replace(/\*\*([\s\S]+?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
+  const briefPlain = t => (t || '').replace(/\*\*/g, '');
+  function briefText(root) {
+    let out = '';
+    const isBold = n => n.nodeName === 'B' || n.nodeName === 'STRONG' || (n.style && (n.style.fontWeight === 'bold' || +n.style.fontWeight >= 600));
+    const walk = (n, bold) => {
+      for (const c of n.childNodes) {
+        if (c.nodeType === 3) { out += c.nodeValue.replace(/\u00a0/g, ' '); continue; }
+        if (c.nodeName === 'BR') { out += '\n'; continue; }
+        if (c.nodeType !== 1) continue;
+        const block = /^(DIV|P|LI|H[1-6])$/.test(c.nodeName);
+        if (block && out && !out.endsWith('\n')) out += '\n';
+        const b = !bold && isBold(c);
+        if (b) out += '**';
+        walk(c, bold || b);
+        if (b) out += '**';
+      }
+    };
+    walk(root, false);
+    return out.replace(/\*\*(\s*)\*\*/g, '$1').replace(/\n{3,}/g, '\n\n').trim().slice(0, 20000); // drop empty bold marks
+  }
+  // an editable box for the brief, saving itself as you type
+  function briefEditor(p, cls, onSaved) {
+    const ed = el('div', { class: 'pj-brief-ed ' + cls, contenteditable: 'true', role: 'textbox', 'aria-multiline': 'true', 'aria-label': 'Project brief',
+      'data-placeholder': 'Write a brief for this project: what it is, why it matters, what done looks like. ⌘B for bold.' });
+    ed.innerHTML = briefHtml(p.brief);
+    const status = el('span', { class: 'pj-brief-status', 'aria-live': 'polite' });
+    let timer = null, last = p.brief || '';
+    const save = async () => {
+      clearTimeout(timer);
+      const v = briefText(ed);
+      if (v === last) return;
+      status.textContent = 'Saving…';
+      try { await q(sb.from('projects').update({ brief: v || null }).eq('id', p.id)); last = v; p.brief = v || null; status.textContent = 'Saved'; onSaved && onSaved(); }
+      catch (e) { status.textContent = 'Not saved. Check your connection.'; }
+    };
+    ed.addEventListener('input', () => { if (!ed.textContent.trim() && !ed.querySelector('br + br')) ed.innerHTML = ''; status.textContent = ''; clearTimeout(timer); timer = setTimeout(save, 800); });
+    ed.addEventListener('blur', save);
+    ed.addEventListener('keydown', e => {
+      const k = e.key.toLowerCase();
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && k === 'b') { e.preventDefault(); document.execCommand('bold'); }
+      else if ((e.metaKey || e.ctrlKey) && (k === 'i' || k === 'u')) e.preventDefault(); // bold only
+    });
+    // pasted or dropped text comes in plain, at the same size
+    ed.addEventListener('paste', e => { e.preventDefault(); document.execCommand('insertText', false, (e.clipboardData || window.clipboardData).getData('text/plain')); });
+    ed.addEventListener('drop', e => { e.preventDefault(); });
+    return { ed, status, save };
+  }
+  const listenBrief = p => el('button', { type: 'button', class: 'pj-brief-listen', title: 'Listen to the brief', 'aria-label': 'Listen to the brief',
+    onclick: () => {
+      const v = DS.voice, t = briefPlain(p.brief).trim();
+      if (!t) return toast('Write a brief first.');
+      if (!v) return toast('Read-aloud isn’t available in this browser.');
+      if (v.unlock) v.unlock();
+      v.play([p.name + '.', ...t.split(/\n+/)], 'Brief');
+    } }, Object.assign(el('span', { 'aria-hidden': 'true' }), { innerHTML: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>' }), el('span', {}, 'Listen'));
+  function briefBox(p) {
+    const more = el('button', { type: 'button', class: 'linkish pj-brief-more', hidden: true, onclick: () => openBrief() }, 'Show more');
+    const { ed, status } = briefEditor(p, 'short', () => {});
+    // "Show more" only when the brief runs past five lines
+    // when it's longer, show exactly five whole lines (no half line peeking out at the bottom)
+    const check = () => { ed.classList.remove('clipped'); const over = ed.scrollHeight > ed.clientHeight + 2; more.hidden = !over; ed.classList.toggle('clipped', over && document.activeElement !== ed); };
+    ed.addEventListener('input', () => requestAnimationFrame(check));
+    ed.addEventListener('focus', () => ed.classList.remove('clipped'));
+    ed.addEventListener('blur', () => { ed.scrollTop = 0; check(); });
+    requestAnimationFrame(() => requestAnimationFrame(check));
+    if (window.ResizeObserver) new ResizeObserver(check).observe(ed);
+    function openBrief() {
+      const big = briefEditor(p, 'full', () => {});
+      const dlg = el('dialog', { class: 'pj-brief-dlg', 'aria-label': 'Project brief' },
+        el('div', { class: 'dlg' },
+          el('div', { class: 'pj-brief-dh' }, el('h2', {}, p.name), listenBrief(p)),
+          el('p', { class: 'meta pj-brief-sub' }, 'Project brief · saves as you type · ⌘B for bold'),
+          big.ed,
+          el('div', { class: 'actions' }, big.status, el('button', { type: 'button', class: 'btn primary', onclick: () => dlg.close() }, 'Done'))));
+      dlg.addEventListener('close', async () => { await big.save(); ed.innerHTML = briefHtml(p.brief); check(); dlg.remove(); });
+      document.body.append(dlg); dlg.showModal(); big.ed.focus();
+      const end = document.createRange(); end.selectNodeContents(big.ed); end.collapse(false); // carry on writing at the end
+      const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(end);
+    }
+    return el('section', { class: 'pj-brief' },
+      el('div', { class: 'pj-brief-h' }, el('h3', {}, 'Brief'), status, listenBrief(p)),
+      ed, more);
   }
 
   /* ---------- drag a task between This month, This week and Today (project page, mouse or trackpad) ----------

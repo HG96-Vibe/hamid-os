@@ -78,3 +78,28 @@
 .pj-ghost li:not(.s-done){background:#fff;color:#1e1b4b}
 .pj-ghost li .pj-it{text-decoration:none}
 body.pj-is-dragging,body.pj-is-dragging *{cursor:grabbing!important;user-select:none!important;-webkit-user-select:none!important}
+
+/* ---------- project brief: a box like "What done looks like", five lines, Show more opens the whole thing ---------- */
+.pj-brief{background:#fbfbf8;color:#1e1b4b;border-radius:16px;padding:14px 18px 12px;box-shadow:0 18px 40px rgba(8,5,30,.35);margin:-2px 0 16px;display:grid;gap:8px}
+.pj-brief-h{display:flex;align-items:center;gap:10px}
+.pj-brief-h h3{margin:0;font:700 11.5px/1.2 var(--ui);letter-spacing:.1em;text-transform:uppercase;color:#b45309}
+.pj-brief-status{font-size:12px;color:#8a8db5;margin-left:auto}
+.pj-brief-listen{display:inline-flex;align-items:center;gap:5px;border:1px solid #dcdff0;background:#fff;color:#1e1b4b;border-radius:999px;padding:3px 11px 3px 9px;font:700 12.5px/1.2 var(--ui);cursor:pointer}
+.pj-brief-h .pj-brief-status:empty+.pj-brief-listen,.pj-brief-h h3+.pj-brief-listen{margin-left:auto}
+.pj-brief-listen:hover{border-color:#d97706;color:#b45309}
+.pj-brief-listen span{display:inline-grid}
+.pj-brief-ed{border:1px solid #dcdff0;background:#fff;color:#1e1b4b;border-radius:10px;padding:9px 12px;font:400 15px/1.55 var(--ui);white-space:pre-wrap;overflow-wrap:anywhere;color-scheme:light;cursor:text}
+.pj-brief-ed b,.pj-brief-ed strong{font-weight:700}
+.pj-brief-ed:focus{outline:none;border-color:var(--i500);box-shadow:0 0 0 3px rgba(129,140,248,.2)}
+.pj-brief-ed:empty::before{content:attr(data-placeholder);color:#9497bf;pointer-events:none}
+.pj-brief-ed.short{max-height:calc(15px * 1.55 * 5 + 20px);overflow:hidden}
+.pj-brief-ed.short:focus{overflow-y:auto}
+.pj-brief-ed.short.clipped{padding-bottom:0;max-height:calc(15px * 1.55 * 5 + 11px)}
+.pj-brief-more{justify-self:start;font-size:13.5px;font-weight:700;color:#4338ca}
+.pj-brief-dlg{width:min(760px,calc(100% - 24px))}
+.pj-brief-dh{display:flex;align-items:center;gap:12px;justify-content:space-between}
+.pj-brief-sub{margin:-10px 0 0}
+.pj-brief-ed.full{min-height:220px;max-height:min(60vh,560px);overflow-y:auto}
+.pj-brief-dlg .actions{display:flex;align-items:center;justify-content:flex-end;gap:12px}
+.pj-brief-dlg .pj-brief-status{color:var(--muted);margin-right:auto;margin-left:0}
+html.light .pj-brief{box-shadow:var(--shadow);border:1px solid rgba(30,27,75,.06)}
