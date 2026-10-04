@@ -115,6 +115,9 @@
     }
     if (M.view === 'book') await loadBook(); else await loadWorth();
     draw();
+    // the page is put on screen after this returns: measure the long lists once it's there
+    let tries = 0;
+    (function whenShown() { if (page.isConnected) capLists(); else if (++tries < 120) requestAnimationFrame(whenShown); })();
     return page;
   }
   // redraw in place: keep the scroll position, and the focus on the quick-add box if it was there
@@ -124,15 +127,36 @@
     if (!page) return;
     const y = window.scrollY, active = focusId || (document.activeElement && document.activeElement.id);
     page.classList.toggle('mn-hide', M.hide);
+    const scrolled = new Map([...page.querySelectorAll('.mn-cap')].map(c => [c.dataset.cap, c.scrollTop]));
     page.replaceChildren(header(), ...(M.view === 'book' ? bookView() : worthView()));
     const fresh = keep && page.querySelector('.' + keep.classList[1]);
     if (fresh && fresh !== keep) {
       for (const sel of ['.mn-ch', '.mn-total']) { const a = keep.querySelector(sel), b = fresh.querySelector(sel); if (a && b) a.replaceWith(b); }
       fresh.replaceWith(keep);
     }
+    capLists(scrolled);
     if (Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y);
     if (active && active.startsWith('mn-')) { const f = document.getElementById(active); if (f) f.focus({ preventScroll: true }); }
   }
+  // Long lists show 10 at a time and scroll for the rest, so no card grows without end.
+  const CAP = 10;
+  function capLists(scrolled) {
+    if (!page) return;
+    scrolled = scrolled || new Map([...page.querySelectorAll('.mn-cap')].map(c => [c.dataset.cap, c.scrollTop]));
+    page.querySelectorAll('.mn-cap').forEach(c => {
+      const items = c.querySelectorAll(c.dataset.items);
+      if (items.length <= CAP) { c.classList.remove('capped'); c.style.maxHeight = ''; return; }
+      if (!c.offsetWidth) return; // hidden (a closed "Paid off" section): measured when it opens
+      // room for the scrollbar first (it narrows the rows, and on a phone some then wrap), then measure 10 rows
+      c.classList.add('capped'); c.style.maxHeight = '';
+      const z = c.getBoundingClientRect().width / c.offsetWidth || 1;
+      const bottom = (items[CAP - 1].getBoundingClientRect().bottom - c.getBoundingClientRect().top) / z + c.scrollTop;
+      c.style.maxHeight = Math.ceil(bottom + 2) + 'px';
+      c.setAttribute('tabindex', '0'); c.setAttribute('aria-label', `${items.length} items, scroll to see them all`);
+      if (scrolled && scrolled.has(c.dataset.cap)) c.scrollTop = scrolled.get(c.dataset.cap);
+    });
+  }
+  document.addEventListener('toggle', e => { if (page && page.contains(e.target)) capLists(); }, true);
   async function switchBook(id) {
     M.view = 'book'; M.book = id; M.filter = null; M.search = ''; store('mn_book', id); store('mn_view', 'book');
     await loadBook(); draw();
@@ -167,7 +191,8 @@
       el('h2', {}, monthName(M.month)),
       el('button', { type: 'button', class: 'arrow', 'aria-label': 'Next month', onclick: () => changeMonth(addMonths(M.month, 1)) }, '›'),
       isNow ? null : el('button', { type: 'button', class: 'pill', onclick: () => changeMonth(monthStart(today())) }, 'This month'));
-    return [nav, quickAdd(), kpis(mtx), el('div', { class: 'mn-grid' }, spending(mtx), el('div', { class: 'mn-col' }, income(mtx), trend(), isPersonal(M.book) ? plannedCard() : null)),
+    // two even columns: what went out and what came in on the left, the trend and the bills on the right
+    return [nav, quickAdd(), kpis(mtx), el('div', { class: 'mn-grid' }, el('div', { class: 'mn-col' }, spending(mtx), income(mtx)), el('div', { class: 'mn-col' }, trend(), isPersonal(M.book) ? plannedCard() : null)),
       isPersonal(M.book) ? el('div', { class: 'mn-grid mn-debts' }, debtCard('borrowed'), debtCard('lent')) : null, txList(mtx)];
   }
 
@@ -257,7 +282,7 @@
         el('button', { type: 'button', class: 'linkish', onclick: catsDialog }, budgeted.length ? 'Edit budgets' : 'Set budgets')),
       budgeted.length ? el('p', { class: 'mn-total' }, amt(totalS), ' spent of ', amt(totalB, { whole: true }), ' budgeted · ',
         totalS > totalB ? [amt(totalS - totalB), ' over'] : [amt(totalB - totalS), ' left']) : null,
-      rows.length ? el('div', { class: 'mn-brows' }, rows) : el('p', { class: 'mn-empty' }, 'No spending this month yet.'),
+      rows.length ? el('div', { class: 'mn-brows mn-cap', 'data-cap': 'spend', 'data-items': '.mn-brow' }, rows) : el('p', { class: 'mn-empty' }, 'No spending this month yet.'),
       !budgeted.length ? el('p', { class: 'mn-tip' }, 'Give categories a monthly budget and each bar shows how much is left.') : null);
   }
 
@@ -267,7 +292,7 @@
     const keys = Object.keys(got).sort((a, b) => got[b] - got[a]), max = Math.max(1, ...Object.values(got));
     return el('section', { class: 'mn-card mn-income' },
       el('div', { class: 'mn-ch' }, el('h3', {}, 'Money in')),
-      keys.length ? el('div', { class: 'mn-brows' }, keys.map(k => el('button', { type: 'button', class: 'mn-brow inrow' + (M.filter === k ? ' on' : ''),
+      keys.length ? el('div', { class: 'mn-brows mn-cap', 'data-cap': 'income', 'data-items': '.mn-brow' }, keys.map(k => el('button', { type: 'button', class: 'mn-brow inrow' + (M.filter === k ? ' on' : ''),
         'aria-pressed': String(M.filter === k), title: 'Show these payments', onclick: () => { M.filter = M.filter === k ? null : k; draw(); } },
         el('span', { class: 'mn-bname' }, k === '__none' ? 'Uncategorised' : k),
         el('span', { class: 'mn-bnum' }, amt(got[k])),
@@ -342,10 +367,10 @@
       el('div', { class: 'mn-ch' }, el('h3', {}, 'Payments'),
         M.filter ? el('button', { type: 'button', class: 'pill mn-fpill', onclick: () => { M.filter = null; draw(); } }, `Showing ${M.filter === '__none' ? 'uncategorised' : M.filter} ×`) : null,
         el('span', { class: 'mn-count' }, `${shown.length} of ${mtx.length}`), search),
-      days.length ? days.map(d => el('div', { class: 'mn-day' },
+      days.length ? el('div', { class: 'mn-cap', 'data-cap': 'tx', 'data-items': '.mn-tx' }, days.map(d => el('div', { class: 'mn-day' },
         el('div', { class: 'mn-dayh' }, el('span', {}, fmt(d.date, { weekday: 'short', day: 'numeric', month: 'short' })),
           amt(d.items.reduce((a, t) => a + t.amount_pence, 0), { plus: true }, 'mn-daysum')),
-        d.items.map(txRow))) :
+        d.items.map(txRow)))) :
         el('p', { class: 'mn-empty' }, mtx.length ? 'Nothing matches.' : `No payments in ${monthName(M.month)} yet. Add one above, or import your bank statement.`));
   }
   function txRow(t) {
@@ -467,8 +492,9 @@
     const rows = [...list.children], byId = new Map(rows.map(r => [r.dataset.pid, r]));
     const order = plannedOrder().map(x => byId.get(x.p.id)).filter(Boolean);
     if (order.every((r, i) => r === rows[i])) return Promise.resolve();
-    const was = new Map(rows.map(r => [r, r.getBoundingClientRect()])), focused = document.activeElement;
+    const was = new Map(rows.map(r => [r, r.getBoundingClientRect()])), focused = document.activeElement, st = list.scrollTop;
     order.forEach(r => list.append(r));
+    if (list.scrollTop !== st) list.scrollTop = st; // moving the focused line can reset a scrolling list
     if (focused && list.contains(focused) && document.activeElement !== focused) focused.focus({ preventScroll: true }); // moving a line drops focus
     if (calm() || !list.animate) return Promise.resolve();
     const z = list.offsetWidth ? list.getBoundingClientRect().width / list.offsetWidth : 1;
@@ -513,7 +539,7 @@
         M.planned.length ? el('span', { class: 'mn-psum' }, amt(Math.round(monthly), { whole: true }), ' a month') : null),
       el('p', { class: 'mn-pnote' }, 'Tick one when it’s been paid and it’s added to money out.'),
       M.planned.length ? el('p', { class: 'mn-total' }, left ? [amt(left), ' still to go out this month'] : 'Nothing more to go out this month.') : null,
-      list.length ? el('div', { class: 'mn-plist' }, list.map(({ p, due, paid }) => el('div', { class: 'mn-prow' + (paid ? ' paid' : due < today() ? ' late' : ''), 'data-pid': p.id },
+      list.length ? el('div', { class: 'mn-plist mn-cap', 'data-cap': 'dd', 'data-items': '.mn-prow' }, list.map(({ p, due, paid }) => el('div', { class: 'mn-prow' + (paid ? ' paid' : due < today() ? ' late' : ''), 'data-pid': p.id },
         el('button', { type: 'button', class: 'mn-ptick', id: 'mn-tick-' + p.id, 'aria-pressed': String(paid), title: paid ? 'Paid. Click to untick' : 'Tick when it’s been paid',
           'aria-label': paid ? `${p.name} is paid. Untick` : `Mark ${p.name} as paid`, onclick: e => togglePaid(p, e.currentTarget.closest('.mn-prow')) }, paid ? '✓' : ''),
         el('button', { type: 'button', class: 'mn-pn', title: 'Edit', onclick: () => plannedDialog(p) }, el('b', {}, p.name), p.note ? el('small', {}, p.note) : null),
@@ -618,8 +644,8 @@
       el('div', { class: 'mn-ch' }, el('h3', {}, T.title),
         open.length ? el('span', { class: 'mn-psum' }, amt(total), ' ' + T.left) : null),
       el('p', { class: 'mn-pnote' }, T.sub),
-      open.length ? el('div', { class: 'mn-dlist' }, open.map(row)) : el('p', { class: 'mn-empty' }, closed.length ? `Nothing ${dir === 'borrowed' ? 'owed' : 'owed to you'} right now.` : T.empty),
-      closed.length ? el('details', { class: 'mn-table mn-dclosed' }, el('summary', {}, `${T.done} (${closed.length})`), el('div', { class: 'mn-dlist' }, closed.map(row))) : null,
+      open.length ? el('div', { class: 'mn-dlist mn-cap', 'data-cap': 'debt-' + dir, 'data-items': '.mn-drow' }, open.map(row)) : el('p', { class: 'mn-empty' }, closed.length ? `Nothing ${dir === 'borrowed' ? 'owed' : 'owed to you'} right now.` : T.empty),
+      closed.length ? el('details', { class: 'mn-table mn-dclosed' }, el('summary', {}, `${T.done} (${closed.length})`), el('div', { class: 'mn-dlist mn-cap', 'data-cap': 'done-' + dir, 'data-items': '.mn-drow' }, closed.map(row))) : null,
       el('form', { class: 'mn-dadd', onsubmit: add }, name, amount,
         el('label', { class: 'mn-dl' }, el('span', {}, dir === 'borrowed' ? 'Borrowed on' : 'Lent on'), started),
         el('label', { class: 'mn-dl' }, el('span', {}, 'Due (optional)'), due),
@@ -1042,7 +1068,7 @@
     });
     return el('section', { class: 'mn-card mn-holdings' },
       el('div', { class: 'mn-ch' }, el('h3', {}, 'Investments & accounts')),
-      rows.length ? el('div', { class: 'mn-holdlist' }, rows) : el('p', { class: 'mn-empty' }, 'Add what you own: ISAs, pensions, shares, crypto, savings, property. Add debts too (mortgage, loans, cards) and they count against your net worth.'),
+      rows.length ? el('div', { class: 'mn-holdlist mn-cap', 'data-cap': 'hold', 'data-items': '.mn-hold' }, rows) : el('p', { class: 'mn-empty' }, 'Add what you own: ISAs, pensions, shares, crypto, savings, property. Add debts too (mortgage, loans, cards) and they count against your net worth.'),
       el('form', { class: 'mn-hadd', onsubmit: add }, name, kind, value, el('button', { type: 'submit', class: 'btn primary' }, icon('plus', 14), ' Add')),
       el('p', { class: 'mn-tip' }, 'Update values whenever you check them (monthly is plenty). Each update is kept, so the chart shows how your net worth grows.'));
   }
@@ -1079,6 +1105,7 @@
   let resizeT = 0, lastW = window.innerWidth;
   window.addEventListener('resize', () => {
     clearTimeout(resizeT);
+    requestAnimationFrame(() => { if (state.view === 'capital' && page && page.isConnected) capLists(); });
     resizeT = setTimeout(() => { if (state.view === 'capital' && page && page.isConnected && Math.abs(window.innerWidth - lastW) > 40 && !document.querySelector('dialog.mn-dlg')) { lastW = window.innerWidth; draw(); } }, 250);
   });
 
