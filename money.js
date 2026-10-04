@@ -132,9 +132,10 @@
     const fresh = keep && page.querySelector('.' + keep.classList[1]);
     if (fresh && fresh !== keep) {
       for (const sel of ['.mn-ch', '.mn-total']) { const a = keep.querySelector(sel), b = fresh.querySelector(sel); if (a && b) a.replaceWith(b); }
+      keep.dataset.sum = fresh.dataset.sum || ''; // the side list reads the up-to-date summary
       fresh.replaceWith(keep);
     }
-    foldCards();
+    layoutCards();
     capLists(scrolled);
     if (Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y);
     if (active && active.startsWith('mn-')) { const f = document.getElementById(active); if (f) f.focus({ preventScroll: true }); }
@@ -145,13 +146,47 @@
     'mn-debt-lent': 'lending', 'mn-list': 'payments', 'mn-worthchart': 'worth', 'mn-holdings': 'holdings' };
   const opened = new Set((() => { try { return JSON.parse(sessionStorage.getItem('mn_open') || '[]'); } catch (e) { return []; } })());
   const CHEV = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
-  function foldCards() {
-    page.querySelectorAll('.mn-card').forEach(card => {
+  // On a wide screen the cards are listed on the left (title and summary) and the chosen one fills the right;
+  // the list stays in view as you scroll. Your last choice is remembered on this device. On a phone they stack
+  // as fold-down cards instead.
+  const split = (...cards) => el('div', { class: 'mn-md' }, el('nav', { class: 'mn-side', 'aria-label': 'Capital sections' }), el('div', { class: 'mn-main' }, cards));
+  const isWide = () => !window.matchMedia || matchMedia('(min-width: 901px)').matches;
+  const keyOf = card => FOLD[Object.keys(FOLD).find(c => card.classList.contains(c))];
+  function layoutCards() {
+    const cards = [...page.querySelectorAll('.mn-main > .mn-card')], side = page.querySelector('.mn-side');
+    if (!cards.length) return;
+    const keys = cards.map(keyOf);
+    let sel = store('mn_sel_' + M.view);
+    if (!keys.includes(sel)) sel = keys.includes('planned') ? 'planned' : keys[0];
+    M.sel = sel;
+    foldCards(cards);
+    const wide = isWide();
+    cards.forEach(c => { const on = keyOf(c) === sel; c.classList.toggle('sel', wide && on); if (wide) c.classList.remove('folded'); });
+    if (side) side.replaceChildren(...cards.map(c => {
+      const id = keyOf(c), title = (c.querySelector(':scope > .mn-ch h3') || {}).textContent || '';
+      return el('button', { type: 'button', class: 'mn-sbtn', 'data-k': id, 'aria-current': String(id === sel), onclick: () => selectCard(id) },
+        el('b', {}, title), c.dataset.sum ? el('small', { class: 'mn-amt' }, c.dataset.sum) : null);
+    }));
+  }
+  function selectCard(id) {
+    if (!page) return;
+    M.sel = id; store('mn_sel_' + M.view, id);
+    page.querySelectorAll('.mn-main > .mn-card').forEach(c => c.classList.toggle('sel', keyOf(c) === id));
+    page.querySelectorAll('.mn-sbtn').forEach(b => b.setAttribute('aria-current', String(b.dataset.k === id)));
+    const card = page.querySelector('.mn-main > .mn-card.sel');
+    if (card) { card.classList.add('opening'); setTimeout(() => card.classList.remove('opening'), 320); }
+    capLists(); // its lists can only be measured once it's showing
+    // if you'd scrolled down a long card, bring the top of the new one into view
+    const main = page.querySelector('.mn-main'), top = main ? main.getBoundingClientRect().top : 0;
+    if (top < 90) window.scrollBy({ top: top - 110, behavior: 'smooth' });
+  }
+  function foldCards(cards) {
+    cards.forEach(card => {
       const key = Object.keys(FOLD).find(c => card.classList.contains(c)); if (!key) return;
       const head = card.querySelector(':scope > .mn-ch'); if (!head) return;
       const id = FOLD[key], open = opened.has(id), title = (head.querySelector('h3') || {}).textContent || 'this section';
       card.classList.toggle('folded', !open);
-      if (card.dataset.sum && !head.querySelector('.mn-chsum')) head.querySelector('h3').after(el('span', { class: 'mn-chsum' }, card.dataset.sum));
+      if (card.dataset.sum && !head.querySelector('.mn-chsum,.mn-psum,.mn-count')) head.querySelector('h3').after(el('span', { class: 'mn-chsum' }, card.dataset.sum));
       let b = head.querySelector('.mn-fold');
       if (!b) { b = Object.assign(el('button', { type: 'button', class: 'mn-fold' }), { innerHTML: CHEV }); head.append(b); }
       b.setAttribute('aria-expanded', String(open)); b.setAttribute('aria-label', (open ? 'Fold away ' : 'Open ') + title); b.title = open ? 'Fold away' : 'Open';
@@ -225,9 +260,8 @@
       el('h2', {}, monthName(M.month)),
       el('button', { type: 'button', class: 'arrow', 'aria-label': 'Next month', onclick: () => changeMonth(addMonths(M.month, 1)) }, '›'),
       isNow ? null : el('button', { type: 'button', class: 'pill', onclick: () => changeMonth(monthStart(today())) }, 'This month'));
-    // two even columns: what went out and what came in on the left, the trend and the bills on the right
-    return [nav, quickAdd(), kpis(mtx), el('div', { class: 'mn-grid' }, el('div', { class: 'mn-col' }, spending(mtx), income(mtx)), el('div', { class: 'mn-col' }, trend(), isPersonal(M.book) ? plannedCard() : null)),
-      isPersonal(M.book) ? el('div', { class: 'mn-grid mn-debts' }, debtCard('borrowed'), debtCard('lent')) : null, txList(mtx)];
+    const P = isPersonal(M.book);
+    return [nav, quickAdd(), kpis(mtx), split(spending(mtx), income(mtx), trend(), P ? plannedCard() : null, P ? debtCard('borrowed') : null, P ? debtCard('lent') : null, txList(mtx))];
   }
 
   function catSelect(value, { kind, id, label } = {}) {
@@ -347,7 +381,7 @@
   // the chart's width in page pixels: the card's share of the page (a whole row on narrow screens)
   function chartWidth(share) {
     const main = document.getElementById('main'), w = (main && main.clientWidth) || window.innerWidth - 32;
-    return Math.round(Math.max(300, Math.min(1400, (w > 900 ? w * share : w) - 36)));
+    return Math.round(Math.max(300, Math.min(1400, (w > 900 ? w - 316 : w) - 36))); // the right-hand panel beside the list
   }
   // the last six months, money in beside money out (one scale; hover a bar for its figure)
   function trend() {
@@ -407,7 +441,7 @@
       oninput: e => { M.search = e.target.value; draw('mn-search'); } });
     const days = [];
     shown.forEach(t => { const d = days[days.length - 1]; if (d && d.date === t.occurred_on) d.items.push(t); else days.push({ date: t.occurred_on, items: [t] }); });
-    return el('section', { class: 'mn-card mn-list' },
+    return el('section', { class: 'mn-card mn-list', 'data-sum': plural(mtx.length, 'payment') + (mtx.filter(t => !t.category).length ? ` · ${mtx.filter(t => !t.category).length} to sort` : '') },
       el('div', { class: 'mn-ch' }, el('h3', {}, 'Payments'),
         M.filter ? el('button', { type: 'button', class: 'pill mn-fpill', onclick: () => { M.filter = null; draw(); } }, `Showing ${M.filter === '__none' ? 'uncategorised' : M.filter} ×`) : null,
         el('span', { class: 'mn-count' }, `${shown.length} of ${mtx.length}`), search),
@@ -585,7 +619,7 @@
       try { row = await q(sb.from('money_planned').insert({ user_id: DS.uid(), book_id: M.book, name: n, amount_pence: Math.abs(a), cadence: cad.value, next_on: date.value || today(), note: note.value.trim() || null }).select().single()); } catch (er) { return; }
       M.planned.push(row); toast(`Added ${n}.`); draw('mn-pname');
     };
-    return el('section', { class: 'mn-card mn-planned' },
+    return el('section', { class: 'mn-card mn-planned', 'data-sum': M.planned.length ? `${gbp(Math.round(monthly), { whole: true })} a month` + (left ? ` · ${gbp(left)} to go` : '') : 'none added yet' },
       el('div', { class: 'mn-ch' }, el('h3', {}, 'Direct debits & bills'),
         M.planned.length ? el('span', { class: 'mn-psum' }, amt(Math.round(monthly), { whole: true }), ' a month') : null),
       el('p', { class: 'mn-pnote' }, 'Tick one when it’s been paid and it’s added to money out.'),
@@ -691,7 +725,7 @@
       try { row = await q(sb.from('money_debts').insert({ user_id: DS.uid(), book_id: M.book, direction: dir, name: n, amount_pence: a, started_on: started.value || today(), due_on: due.value || null, note: note.value.trim() || null }).select().single()); } catch (er) { return; }
       M.debts.push(row); toast(`Added ${n}.`); draw(`mn-d${dir}-name`);
     };
-    return el('section', { class: 'mn-card mn-debt mn-debt-' + dir },
+    return el('section', { class: 'mn-card mn-debt mn-debt-' + dir, 'data-sum': open.length ? `${gbp(total)} ${T.left}` : (dir === 'borrowed' ? 'nothing owed' : 'nothing owed to you') },
       el('div', { class: 'mn-ch' }, el('h3', {}, T.title),
         open.length ? el('span', { class: 'mn-psum' }, amt(total), ' ' + T.left) : null),
       el('p', { class: 'mn-pnote' }, T.sub),
@@ -1035,11 +1069,10 @@
         k('Last 30 days', amt(now - ago, { plus: true }), now - ago >= 0 ? 'up' : 'down', now - ago < 0 ? 'neg' : 'pos'),
         k('You own', amt(owned), `${M.holdings.filter(h => !DEBT.has(h.kind)).length} investments & accounts`),
         k('You owe', amt(owe), owe ? plural(M.holdings.filter(h => DEBT.has(h.kind)).length, 'debt') : 'nothing added')),
-      worthChart(points),
-      holdingsCard()];
+      split(worthChart(points), holdingsCard())];
   }
   function worthChart(points) {
-    const card = el('section', { class: 'mn-card mn-worthchart' }, el('div', { class: 'mn-ch' }, el('h3', {}, 'Net worth over time')));
+    const card = el('section', { class: 'mn-card mn-worthchart', 'data-sum': points.length > 1 ? `${gbp(points[points.length - 1].v, { whole: true })} now` : '' }, el('div', { class: 'mn-ch' }, el('h3', {}, 'Net worth over time')));
     if (points.length < 2 || !M.values.length) { card.append(el('p', { class: 'mn-empty' }, 'Your net worth line starts once values have been updated in two different months. Update them every month or so.')); return card; }
     const W = chartWidth(1), H = 220, L = 64, B = 26, T = 12, R = 10, plot = H - B - T;
     // round steps for the axis (£10,000, £20,000…), starting from £0 unless it dips below
@@ -1156,7 +1189,7 @@
   let resizeT = 0, lastW = window.innerWidth;
   window.addEventListener('resize', () => {
     clearTimeout(resizeT);
-    requestAnimationFrame(() => { if (state.view === 'capital' && page && page.isConnected) capLists(); });
+    requestAnimationFrame(() => { if (state.view === 'capital' && page && page.isConnected) { layoutCards(); capLists(); } });
     resizeT = setTimeout(() => { if (state.view === 'capital' && page && page.isConnected && Math.abs(window.innerWidth - lastW) > 40 && !document.querySelector('dialog.mn-dlg')) { lastW = window.innerWidth; draw(); } }, 250);
   });
 
