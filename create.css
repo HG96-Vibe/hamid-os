@@ -320,3 +320,28 @@ html.light .cr-sw{border-color:rgba(0,0,0,.12)}
   #cr-print img.cr-img{break-inside:avoid}
   #cr-print *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
+
+/* uploading documents */
+.cr-head-acts{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.cr-head-acts .cr-new{margin-left:0}
+.cr-up{display:inline-flex;align-items:center;gap:6px}
+.cr-empty-acts{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.cr-empty-acts .btn{display:inline-flex;align-items:center;gap:6px}
+.cr-filesnip{display:flex;align-items:center;gap:8px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.cr-ftype{display:inline-block;flex:none;font:800 11px/1 var(--ui);letter-spacing:.06em;text-transform:uppercase;padding:5px 8px;border-radius:6px;color:#fff;background:#64748b}
+.cr-ft-pdf{background:#dc2626}.cr-ft-ppt{background:#ea580c}.cr-ft-doc{background:#2563eb}
+.cr-ftype.big{font-size:15px;padding:10px 14px;border-radius:10px}
+.cr-fview{display:grid;gap:12px}
+.cr-fbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.cr-back{display:inline-flex;align-items:center;gap:4px}
+.cr-ftitle{flex:1 1 260px;min-width:0;font:800 clamp(22px,3vw,32px)/1.2 var(--display);background:none;border:0;color:var(--text);padding:4px 0}
+.cr-ftitle:focus{outline:none;border-bottom:2px solid var(--amber)}
+.cr-facts{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.cr-facts .btn{display:inline-flex;align-items:center;gap:5px}
+.cr-fmeta{margin:0}
+.cr-pdf{width:100%;height:calc(100vh - 230px);min-height:480px;border:0;border-radius:14px;background:#fff;box-shadow:0 14px 34px rgba(8,5,30,.3)}
+.cr-fcard{display:grid;justify-items:center;gap:14px;text-align:center;padding:48px 24px;border-radius:16px;background:#fbfbf8;color:#1e1b4b;box-shadow:0 14px 34px rgba(8,5,30,.3)}
+.cr-fcard p{max-width:520px;margin:0;color:#5b5f86}
+.cr-fcard .btn{display:inline-flex;align-items:center;gap:6px}
+html.light .cr-fcard,html.light .cr-pdf{box-shadow:0 10px 28px rgba(60,50,20,.12);border:1px solid rgba(30,27,75,.06)}
+@media (max-width:700px){.cr-up span{display:none}.cr-up{padding:8px 11px}.cr-pdf{height:70vh;min-height:360px}}
