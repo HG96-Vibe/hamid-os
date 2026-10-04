@@ -1,0 +1,731 @@
+// Money tab: where your money goes, budgets, and net worth.
+// - Three separate books: Personal, Augustova and PCTR (the top-level companies in Projects, in their colours).
+// - Add as you go ("12.50 lunch", "+2,500 salary") and import your bank's statement file each week.
+// - Categories with monthly budgets; it learns your categories from the shops and payees you sort.
+// - Net worth: investments and accounts you add yourself, with their value over time.
+// - "Hide amounts" blurs every figure (remembered on this device).
+// The careful parsing (amounts, dates, statement files) lives in money-core.js.
+(function () {
+  'use strict';
+  const DS = window.DS, C = window.MoneyCore;
+  if (!DS || !C) return;
+  const { sb, q, el, state, toast, today, addDays, monthStart, addMonths, fmt } = DS;
+  const { gbp } = C;
+  const store = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
+
+  const M = { books: [], book: store('mn_book'), view: store('mn_view') === 'worth' ? 'worth' : 'book', month: monthStart(today()),
+    hide: store('mn_hide') === '1', cats: [], rules: [], tx: [], filter: null, search: '', holdings: [], values: [] };
+  let page = null;
+
+  const ICONS = {
+    eye: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+    eyeOff: '<path d="M3 3l18 18M10.6 5.1A10.8 10.8 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.1 3.9M6.6 6.6A17 17 0 0 0 2 12s3.6 7 10 7a10 10 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
+    upload: '<path d="M12 16V4M6 10l6-6 6 6M4 20h16"/>',
+    sliders: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
+    trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>'
+  };
+  const icon = (n, s = 16) => Object.assign(el('span', { class: 'mn-ic', 'aria-hidden': 'true' }),
+    { innerHTML: `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[n]}</svg>` });
+  // every figure wears .mn-amt, so "Hide amounts" can blur them all at once
+  const amt = (p, opts, cls) => el('span', { class: 'mn-amt' + (cls ? ' ' + cls : '') }, gbp(p, opts));
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const monthEnd = ms => addDays(addMonths(ms, 1), -1);
+  const monthName = ms => fmt(ms, { month: 'long', year: 'numeric' });
+  const book = () => M.books.find(b => b.id === M.book);
+  const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  const isBiz = () => !!book() && book().kind !== 'personal';
+
+  /* =====================================================================
+     Data
+     ===================================================================== */
+  async function loadBooks() {
+    await DS.proj.ensure();
+    const r = DS.proj.roots().filter(p => p.status === 'active');
+    M.books = [...r.filter(p => p.kind === 'personal'), ...r.filter(p => p.kind !== 'personal')];
+    if (!M.books.some(b => b.id === M.book)) M.book = M.books[0] ? M.books[0].id : null;
+  }
+  async function loadBook() {
+    const id = M.book; if (!id) return;
+    const from = addMonths(M.month, -5), to = monthEnd(M.month);
+    let [cats, rules, tx] = await Promise.all([
+      q(sb.from('money_categories').select('*').eq('book_id', id).order('position')),
+      q(sb.from('money_rules').select('pattern,category').eq('book_id', id)),
+      q(sb.from('money_tx').select('*').eq('book_id', id).gte('occurred_on', from).lte('occurred_on', to)
+        .order('occurred_on', { ascending: false }).order('created_at', { ascending: false }).limit(10000))]);
+    if (!cats.length) cats = await seedCats(id);
+    if (M.book !== id) return;
+    Object.assign(M, { cats, rules, tx });
+  }
+  // a new book starts with sensible categories (yours to rename, budget or delete)
+  async function seedCats(id) {
+    const b = M.books.find(x => x.id === id), d = C.DEFAULTS[b && b.kind === 'personal' ? 'personal' : 'business'];
+    const rows = []; let n = 0;
+    for (const kind of ['out', 'in']) for (const name of d[kind]) rows.push({ user_id: DS.uid(), book_id: id, name, kind, position: ++n });
+    await q(sb.from('money_categories').upsert(rows, { onConflict: 'user_id,book_id,kind,name', ignoreDuplicates: true }));
+    return q(sb.from('money_categories').select('*').eq('book_id', id).order('position'));
+  }
+  async function loadWorth() {
+    const [holdings, values] = await Promise.all([
+      q(sb.from('money_holdings').select('*').eq('archived', false).order('position')),
+      q(sb.from('money_values').select('id,holding_id,valued_on,value_pence').order('valued_on').limit(20000))]);
+    Object.assign(M, { holdings, values });
+  }
+
+  const inMonth = t => t.occurred_on >= M.month && t.occurred_on <= monthEnd(M.month);
+  const catsOf = kind => M.cats.filter(c => c.kind === kind);
+  const kindOf = name => (M.cats.find(c => c.name === name) || {}).kind || null;
+  function guessCat(desc, income) {
+    const key = C.merchantKey(desc), rule = key && M.rules.find(r => r.pattern === key);
+    if (rule && M.cats.some(c => c.name === rule.category && c.kind === (income ? 'in' : 'out'))) return rule.category;
+    return C.guess(desc, catsOf(income ? 'in' : 'out').map(c => c.name));
+  }
+  // remember: payments to this shop / from this payee go in this category
+  async function learn(desc, cat) {
+    const key = C.merchantKey(desc); if (!key || !cat) return;
+    try { await q(sb.from('money_rules').upsert({ user_id: DS.uid(), book_id: M.book, pattern: key, category: cat }, { onConflict: 'user_id,book_id,pattern' })); } catch (e) { return; }
+    const r = M.rules.find(x => x.pattern === key); if (r) r.category = cat; else M.rules.push({ pattern: key, category: cat });
+  }
+  const sortTx = () => M.tx.sort((a, b) => (b.occurred_on > a.occurred_on ? 1 : b.occurred_on < a.occurred_on ? -1 : (b.created_at > a.created_at ? 1 : -1)));
+
+  /* =====================================================================
+     The page
+     ===================================================================== */
+  async function viewMoney() {
+    await loadBooks();
+    page = el('div', { class: 'mn' + (M.hide ? ' mn-hide' : '') });
+    if (!M.books.length) {
+      page.append(el('div', { class: 'head' }, el('h1', {}, 'Money')),
+        el('p', { class: 'meta' }, 'Add your companies and Personal area in Projects first. Each one gets its own money book here.'));
+      return page;
+    }
+    if (M.view === 'book') await loadBook(); else await loadWorth();
+    draw();
+    return page;
+  }
+  // redraw in place: keep the scroll position, and the focus on the quick-add box if it was there
+  function draw(focusId) {
+    if (!page) return;
+    const y = window.scrollY, active = focusId || (document.activeElement && document.activeElement.id);
+    page.classList.toggle('mn-hide', M.hide);
+    page.replaceChildren(header(), ...(M.view === 'book' ? bookView() : worthView()));
+    if (Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y);
+    if (active && active.startsWith('mn-')) { const f = document.getElementById(active); if (f) f.focus({ preventScroll: true }); }
+  }
+  async function switchBook(id) {
+    M.view = 'book'; M.book = id; M.filter = null; M.search = ''; store('mn_book', id); store('mn_view', 'book');
+    await loadBook(); draw();
+  }
+  async function switchWorth() { M.view = 'worth'; store('mn_view', 'worth'); await loadWorth(); draw(); }
+  async function changeMonth(ms) { M.month = ms; M.filter = null; await loadBook(); draw(); }
+
+  function header() {
+    const eye = el('button', { type: 'button', class: 'btn mn-eye', 'aria-pressed': String(M.hide), title: M.hide ? 'Show amounts' : 'Hide amounts',
+      onclick: () => { M.hide = !M.hide; store('mn_hide', M.hide ? '1' : '0'); draw(); } }, icon(M.hide ? 'eyeOff' : 'eye'), el('span', {}, M.hide ? 'Show amounts' : 'Hide amounts'));
+    return el('div', { class: 'mn-top' },
+      el('div', { class: 'head mn-head' }, el('h1', {}, 'Money'),
+        el('div', { class: 'mn-actions' },
+          M.view === 'book' ? [
+            el('button', { type: 'button', class: 'btn', onclick: importDialog }, icon('upload'), el('span', {}, 'Import statement')),
+            el('button', { type: 'button', class: 'btn', onclick: catsDialog }, icon('sliders'), el('span', {}, 'Categories & budgets'))] : null,
+          eye)),
+      el('div', { class: 'mn-books', role: 'tablist', 'aria-label': 'Money books' },
+        M.books.map(b => el('button', { type: 'button', role: 'tab', class: 'mn-book' + (M.view === 'book' && M.book === b.id ? ' on' : ''),
+          'aria-selected': String(M.view === 'book' && M.book === b.id), style: `--pj:${DS.proj.color(b.id)}`, onclick: () => switchBook(b.id) },
+          el('span', { class: 'mn-dot', 'aria-hidden': 'true' }), b.name)),
+        el('button', { type: 'button', role: 'tab', class: 'mn-book mn-worth' + (M.view === 'worth' ? ' on' : ''), 'aria-selected': String(M.view === 'worth'), onclick: switchWorth }, 'Net worth')));
+  }
+
+  /* ---------- a book: one month at a time ---------- */
+  function bookView() {
+    const mtx = M.tx.filter(inMonth);
+    const isNow = M.month === monthStart(today());
+    const nav = el('div', { class: 'mn-month' },
+      el('button', { type: 'button', class: 'arrow', 'aria-label': 'Previous month', onclick: () => changeMonth(addMonths(M.month, -1)) }, '‹'),
+      el('h2', {}, monthName(M.month)),
+      el('button', { type: 'button', class: 'arrow', 'aria-label': 'Next month', onclick: () => changeMonth(addMonths(M.month, 1)) }, '›'),
+      isNow ? null : el('button', { type: 'button', class: 'pill', onclick: () => changeMonth(monthStart(today())) }, 'This month'));
+    return [nav, quickAdd(), kpis(mtx), el('div', { class: 'mn-grid' }, spending(mtx), el('div', { class: 'mn-col' }, income(mtx), trend())), txList(mtx)];
+  }
+
+  function catSelect(value, { kind, id, label } = {}) {
+    const opt = c => el('option', { value: c.name }, c.name);
+    const s = el('select', { class: 'mn-cat', id, 'aria-label': label || 'Category' },
+      el('option', { value: '' }, 'Uncategorised'),
+      !kind || kind === 'out' ? el('optgroup', { label: 'Spending' }, catsOf('out').map(opt)) : null,
+      !kind || kind === 'in' ? el('optgroup', { label: 'Money in' }, catsOf('in').map(opt)) : null);
+    s.value = value || '';
+    return s;
+  }
+
+  // add as you go: "12.50 lunch", "lunch £12.50", "+2,500 salary"
+  function quickAdd() {
+    const input = el('input', { class: 'mn-qin', id: 'mn-qin', autocomplete: 'off', maxlength: '320', 'aria-label': 'Add money in or out',
+      placeholder: isBiz() ? 'e.g. 49 Figma, or +1,250 client invoice' : 'e.g. 12.50 lunch, or +2,500 salary' });
+    const sel = catSelect('', { id: 'mn-qcat', label: 'Category for the new entry' });
+    const isNow = M.month === monthStart(today());
+    const date = el('input', { type: 'date', class: 'mn-qdate', id: 'mn-qdate', 'aria-label': 'Date', value: isNow ? today() : monthEnd(M.month) });
+    const hint = el('span', { class: 'mn-qhint', 'aria-live': 'polite' });
+    let manual = false;
+    const incomeOf = (r, cat) => (cat ? kindOf(cat) === 'in' : r.income);
+    const update = () => {
+      const r = C.quick(input.value);
+      if (!manual) sel.value = (r.desc && guessCat(r.desc, r.income)) || '';
+      hint.replaceChildren(r.pence ? amt(incomeOf(r, sel.value) ? r.pence : -r.pence, { plus: true }, incomeOf(r, sel.value) ? 'in' : 'out') : '');
+    };
+    sel.addEventListener('change', () => { manual = true; update(); });
+    input.addEventListener('input', update);
+    const add = async () => {
+      const r = C.quick(input.value);
+      if (!r.pence) { toast('Start with an amount, e.g. 12.50 lunch.'); input.focus(); return; }
+      const cat = sel.value || null, income = incomeOf(r, cat);
+      const row = { user_id: DS.uid(), book_id: M.book, occurred_on: date.value || today(), amount_pence: income ? r.pence : -r.pence,
+        description: (r.desc || cat || (income ? 'Money in' : 'Money out')).slice(0, 300), category: cat, source: 'manual' };
+      let saved; try { saved = await q(sb.from('money_tx').insert(row).select().single()); } catch (e) { return; }
+      if (cat && r.desc && manual) learn(r.desc, cat);
+      M.tx.push(saved); sortTx();
+      if (saved.occurred_on < M.month || saved.occurred_on > monthEnd(M.month)) toast(`Added to ${monthName(monthStart(saved.occurred_on))}.`);
+      else toast(`Added ${gbp(saved.amount_pence, { plus: true })}${cat ? ' · ' + cat : ''}.`);
+      draw('mn-qin');
+    };
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+    return el('div', { class: 'mn-quick' },
+      el('span', { class: 'mn-qplus', 'aria-hidden': 'true' }, '+'), input, hint, sel, date,
+      el('button', { type: 'button', class: 'btn primary', onclick: add }, 'Add'));
+  }
+
+  function kpis(mtx) {
+    const inn = mtx.filter(t => t.amount_pence > 0).reduce((a, t) => a + t.amount_pence, 0);
+    const out = -mtx.filter(t => t.amount_pence < 0).reduce((a, t) => a + t.amount_pence, 0);
+    const net = inn - out, rate = inn ? Math.round(net / inn * 100) : null;
+    const k = (label, value, note, cls) => el('div', { class: 'mn-kpi' + (cls ? ' ' + cls : '') }, el('span', {}, label), el('b', {}, value), note ? el('small', {}, note) : null);
+    return el('div', { class: 'mn-kpis' },
+      k('Money in', amt(inn), plural(mtx.filter(t => t.amount_pence > 0).length, 'payment'), 'in'),
+      k('Money out', amt(out), plural(mtx.filter(t => t.amount_pence < 0).length, 'payment'), 'out'),
+      k(isBiz() ? 'Profit' : 'Left over', amt(net, { plus: true }), net < 0 ? 'more out than in' : 'in minus out', net < 0 ? 'neg' : 'pos'),
+      k(isBiz() ? 'Margin' : 'Saved', rate == null ? '–' : rate + '%', isBiz() ? 'profit as a share of money in' : 'of what came in'));
+  }
+
+  // where it went, against each category's monthly budget
+  function spending(mtx) {
+    const spent = {};
+    mtx.filter(t => t.amount_pence < 0).forEach(t => { const k = t.category && kindOf(t.category) === 'out' ? t.category : '__none'; spent[k] = (spent[k] || 0) - t.amount_pence; });
+    const budgeted = catsOf('out').filter(c => c.budget_pence != null);
+    const free = catsOf('out').filter(c => c.budget_pence == null && spent[c.name]);
+    const totalB = budgeted.reduce((a, c) => a + c.budget_pence, 0), totalS = budgeted.reduce((a, c) => a + (spent[c.name] || 0), 0);
+    const maxFree = Math.max(1, ...free.map(c => spent[c.name]), spent.__none || 0);
+    const row = (name, s, budget, key) => {
+      const over = budget != null && s > budget, warn = budget != null && !over && budget > 0 && s >= budget * .85;
+      const pct = budget != null ? (budget ? Math.min(100, s / budget * 100) : (s ? 100 : 0)) : s / maxFree * 100;
+      const note = budget == null ? (key === '__none' ? 'not sorted yet' : 'no budget')
+        : over ? [amt(s - budget), ' over'] : [amt(budget - s), ' left'];
+      return el('button', { type: 'button', class: 'mn-brow' + (M.filter === key ? ' on' : '') + (over ? ' over' : warn ? ' warn' : '') + (budget == null ? ' free' : ''),
+        'aria-pressed': String(M.filter === key), title: 'Show these payments', onclick: () => { M.filter = M.filter === key ? null : key; draw(); } },
+        el('span', { class: 'mn-bname' }, name),
+        el('span', { class: 'mn-bnum' }, amt(s), budget != null ? [' of ', amt(budget, { whole: true })] : null),
+        el('span', { class: 'mn-bar', 'aria-hidden': 'true' }, el('i', { style: `width:${pct.toFixed(1)}%` })),
+        el('span', { class: 'mn-bnote' }, over ? '⚠ ' : '', note));
+    };
+    const rows = [...budgeted.map(c => row(c.name, spent[c.name] || 0, c.budget_pence, c.name)),
+      ...free.sort((a, b) => spent[b.name] - spent[a.name]).map(c => row(c.name, spent[c.name], null, c.name)),
+      spent.__none ? row('Uncategorised', spent.__none, null, '__none') : null].filter(Boolean);
+    return el('section', { class: 'mn-card mn-spend' },
+      el('div', { class: 'mn-ch' }, el('h3', {}, 'Where it went'),
+        el('button', { type: 'button', class: 'linkish', onclick: catsDialog }, budgeted.length ? 'Edit budgets' : 'Set budgets')),
+      budgeted.length ? el('p', { class: 'mn-total' }, amt(totalS), ' spent of ', amt(totalB, { whole: true }), ' budgeted · ',
+        totalS > totalB ? [amt(totalS - totalB), ' over'] : [amt(totalB - totalS), ' left']) : null,
+      rows.length ? el('div', { class: 'mn-brows' }, rows) : el('p', { class: 'mn-empty' }, 'No spending this month yet.'),
+      !budgeted.length ? el('p', { class: 'mn-tip' }, 'Give categories a monthly budget and each bar shows how much is left.') : null);
+  }
+
+  function income(mtx) {
+    const got = {};
+    mtx.filter(t => t.amount_pence > 0).forEach(t => { const k = t.category && kindOf(t.category) === 'in' ? t.category : '__none'; got[k] = (got[k] || 0) + t.amount_pence; });
+    const keys = Object.keys(got).sort((a, b) => got[b] - got[a]), max = Math.max(1, ...Object.values(got));
+    return el('section', { class: 'mn-card mn-income' },
+      el('div', { class: 'mn-ch' }, el('h3', {}, 'Money in')),
+      keys.length ? el('div', { class: 'mn-brows' }, keys.map(k => el('button', { type: 'button', class: 'mn-brow inrow' + (M.filter === k ? ' on' : ''),
+        'aria-pressed': String(M.filter === k), title: 'Show these payments', onclick: () => { M.filter = M.filter === k ? null : k; draw(); } },
+        el('span', { class: 'mn-bname' }, k === '__none' ? 'Uncategorised' : k),
+        el('span', { class: 'mn-bnum' }, amt(got[k])),
+        el('span', { class: 'mn-bar', 'aria-hidden': 'true' }, el('i', { style: `width:${(got[k] / max * 100).toFixed(1)}%` }))))) :
+        el('p', { class: 'mn-empty' }, 'Nothing in yet this month.'));
+  }
+
+  // the chart's width in page pixels: the card's share of the page (a whole row on narrow screens)
+  function chartWidth(share) {
+    const main = document.getElementById('main'), w = (main && main.clientWidth) || window.innerWidth - 32;
+    return Math.round(Math.max(300, Math.min(1400, (w > 900 ? w * share : w) - 36)));
+  }
+  // the last six months, money in beside money out (one scale; hover a bar for its figure)
+  function trend() {
+    const months = Array.from({ length: 6 }, (_, i) => addMonths(M.month, i - 5));
+    const data = months.map(ms => {
+      const t = M.tx.filter(x => x.occurred_on >= ms && x.occurred_on <= monthEnd(ms));
+      return { ms, in: t.filter(x => x.amount_pence > 0).reduce((a, x) => a + x.amount_pence, 0), out: -t.filter(x => x.amount_pence < 0).reduce((a, x) => a + x.amount_pence, 0) };
+    });
+    const max = Math.max(...data.map(d => Math.max(d.in, d.out)));
+    const W = chartWidth(.45), H = 210, L = 58, B = 26, T = 10, plot = H - B - T, gw = (W - L - 8) / 6, bw = Math.min(26, gw / 3);
+    const nice = v => { if (v <= 0) return 10000; const p = Math.pow(10, Math.floor(Math.log10(v))); return Math.ceil(v / p / (v / p > 5 ? 2 : .5)) * p * (v / p > 5 ? 2 : .5); };
+    const top = nice(max), y = v => T + plot - v / top * plot;
+    let svg = '';
+    for (let i = 0; i <= 3; i++) {
+      const v = top * i / 3, yy = y(v).toFixed(1);
+      svg += `<line x1="${L}" x2="${W - 4}" y1="${yy}" y2="${yy}" class="mn-grid-l"/><text x="${L - 8}" y="${(+yy + 4).toFixed(1)}" text-anchor="end" class="mn-axis mn-amt">${esc(gbp(v, { whole: true }).replace(/\.\d\d$/, ''))}</text>`;
+    }
+    data.forEach((d, i) => {
+      const cx = L + gw * i + gw / 2, label = fmt(d.ms, { month: 'short' });
+      [['in', d.in, cx - bw - 1], ['out', d.out, cx + 1]].forEach(([k, v, x]) => {
+        const h = Math.max(v ? 2 : 0, v / top * plot), r = Math.min(4, bw / 2, h);
+        const tip = `${monthName(d.ms)} · ${k === 'in' ? 'Money in' : 'Money out'} ${gbp(v)}`;
+        if (h) svg += `<path class="mn-b ${k}" d="M${x},${T + plot} v${-(h - r)} q0,${-r} ${r},${-r} h${bw - 2 * r} q${r},0 ${r},${r} v${h - r} z" data-tip="${esc(tip)}"><title>${esc(tip)}</title></path>`;
+        svg += `<rect x="${x - 2}" y="${T}" width="${bw + 4}" height="${plot}" class="mn-hit" data-tip="${esc(tip)}"/>`;
+      });
+      svg += `<text x="${cx}" y="${H - 8}" text-anchor="middle" class="mn-axis${d.ms === M.month ? ' cur' : ''}">${esc(label)}</text>`;
+    });
+    const fig = el('figure', { class: 'mn-chart' });
+    fig.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Money in and out, last six months">${svg}</svg>`;
+    const tipEl = el('div', { class: 'mn-tip-pop mn-amt', hidden: true });
+    fig.append(tipEl);
+    fig.addEventListener('pointermove', e => {
+      const t = e.target.closest('[data-tip]');
+      if (!t) { tipEl.hidden = true; return; }
+      tipEl.textContent = t.dataset.tip; tipEl.hidden = false;
+      const r = fig.getBoundingClientRect(), z = fig.offsetWidth ? r.width / fig.offsetWidth : 1;
+      tipEl.style.left = Math.min(r.width - 10, Math.max(10, e.clientX - r.left)) / z + 'px'; tipEl.style.top = (e.clientY - r.top) / z - 12 + 'px';
+    });
+    fig.addEventListener('pointerleave', () => { tipEl.hidden = true; });
+    const table = el('details', { class: 'mn-table' }, el('summary', {}, 'Show as a table'),
+      el('table', {}, el('thead', {}, el('tr', {}, el('th', {}, 'Month'), el('th', {}, 'Money in'), el('th', {}, 'Money out'))),
+        el('tbody', {}, data.map(d => el('tr', {}, el('td', {}, monthName(d.ms)), el('td', {}, amt(d.in)), el('td', {}, amt(d.out)))))));
+    return el('section', { class: 'mn-card mn-trend' },
+      el('div', { class: 'mn-ch' }, el('h3', {}, 'Last six months'),
+        el('span', { class: 'mn-legend' }, el('i', { class: 'in' }), 'Money in', el('i', { class: 'out' }), 'Money out')),
+      max ? fig : el('p', { class: 'mn-empty' }, 'Your chart fills in as you add money in and out.'), max ? table : null);
+  }
+
+  // this month's payments, newest first, grouped by day
+  function txList(mtx) {
+    const s = M.search.trim().toLowerCase();
+    const shown = mtx.filter(t => {
+      if (M.filter === '__none' ? (t.category && kindOf(t.category)) : M.filter && t.category !== M.filter) return false;
+      return !s || t.description.toLowerCase().includes(s) || (t.category || '').toLowerCase().includes(s) || (t.note || '').toLowerCase().includes(s);
+    });
+    const search = el('input', { type: 'search', class: 'field mn-search', id: 'mn-search', placeholder: 'Search payments', 'aria-label': 'Search payments', value: M.search,
+      oninput: e => { M.search = e.target.value; draw('mn-search'); } });
+    const days = [];
+    shown.forEach(t => { const d = days[days.length - 1]; if (d && d.date === t.occurred_on) d.items.push(t); else days.push({ date: t.occurred_on, items: [t] }); });
+    return el('section', { class: 'mn-card mn-list' },
+      el('div', { class: 'mn-ch' }, el('h3', {}, 'Payments'),
+        M.filter ? el('button', { type: 'button', class: 'pill mn-fpill', onclick: () => { M.filter = null; draw(); } }, `Showing ${M.filter === '__none' ? 'uncategorised' : M.filter} ×`) : null,
+        el('span', { class: 'mn-count' }, `${shown.length} of ${mtx.length}`), search),
+      days.length ? days.map(d => el('div', { class: 'mn-day' },
+        el('div', { class: 'mn-dayh' }, el('span', {}, fmt(d.date, { weekday: 'short', day: 'numeric', month: 'short' })),
+          amt(d.items.reduce((a, t) => a + t.amount_pence, 0), { plus: true }, 'mn-daysum')),
+        d.items.map(txRow))) :
+        el('p', { class: 'mn-empty' }, mtx.length ? 'Nothing matches.' : `No payments in ${monthName(M.month)} yet. Add one above, or import your bank statement.`));
+  }
+  function txRow(t) {
+    const sel = catSelect(t.category, { kind: t.amount_pence > 0 ? 'in' : 'out', label: `Category for ${t.description}` });
+    sel.addEventListener('change', () => setCat(t, sel.value || null));
+    return el('div', { class: 'mn-tx' + (t.category ? '' : ' uncat') },
+      el('button', { type: 'button', class: 'mn-txd', title: 'Edit', onclick: () => editDialog(t) }, t.description,
+        t.note ? el('small', {}, t.note) : null, t.source === 'import' ? el('span', { class: 'mn-src' }, 'imported') : null),
+      sel,
+      amt(t.amount_pence, { plus: true }, 'mn-txa ' + (t.amount_pence > 0 ? 'in' : 'out')),
+      el('button', { type: 'button', class: 'mn-del', title: 'Delete', 'aria-label': `Delete ${t.description}`, onclick: () => del(t) }, icon('trash', 15)));
+  }
+  async function setCat(t, cat) {
+    try { await q(sb.from('money_tx').update({ category: cat }).eq('id', t.id)); } catch (e) { draw(); return; }
+    t.category = cat;
+    if (cat) {
+      await learn(t.description, cat);
+      // the same shop's other unsorted payments follow
+      const key = C.merchantKey(t.description);
+      const others = key ? M.tx.filter(x => x !== t && !x.category && Math.sign(x.amount_pence) === Math.sign(t.amount_pence) && C.merchantKey(x.description) === key) : [];
+      if (others.length) {
+        try { await q(sb.from('money_tx').update({ category: cat }).in('id', others.map(o => o.id))); others.forEach(o => { o.category = cat; }); } catch (e) {}
+        toast(`${cat}: this and ${others.length} more from the same place. Future ones will be sorted too.`);
+      } else toast(`${cat}. Future payments like this will be sorted the same way.`);
+    }
+    draw();
+  }
+  async function del(t) {
+    if (!confirm(`Delete “${t.description}” (${gbp(t.amount_pence, { plus: true })})?`)) return;
+    try { await q(sb.from('money_tx').delete().eq('id', t.id)); } catch (e) { return; }
+    M.tx = M.tx.filter(x => x !== t); toast('Deleted.'); draw();
+  }
+
+  /* ---------- dialogs ---------- */
+  function dialog(title, body, cls) {
+    const dlg = el('dialog', { class: 'mn-dlg ' + (cls || ''), 'aria-label': title });
+    dlg.append(el('div', { class: 'dlg' }, el('h2', {}, title), body));
+    dlg.addEventListener('close', () => dlg.remove());
+    document.body.append(dlg); dlg.showModal();
+    return dlg;
+  }
+  function editDialog(t) {
+    const desc = el('input', { class: 'field', maxlength: '300', value: t.description, 'aria-label': 'Description' });
+    const amount = el('input', { class: 'field', inputmode: 'decimal', value: (Math.abs(t.amount_pence) / 100).toFixed(2), 'aria-label': 'Amount in pounds' });
+    let dir = t.amount_pence > 0 ? 'in' : 'out';
+    const seg = el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Money in or out' },
+      ['out', 'in'].map(k => el('button', { type: 'button', role: 'radio', 'aria-checked': String(dir === k), class: dir === k ? 'on' : '',
+        onclick: e => { dir = k; seg.querySelectorAll('button').forEach(b => { const on = b === e.currentTarget; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); }); } }, k === 'out' ? 'Money out' : 'Money in')));
+    const date = el('input', { class: 'field', type: 'date', value: t.occurred_on, 'aria-label': 'Date' });
+    const cat = catSelect(t.category, { label: 'Category' });
+    const note = el('textarea', { class: 'field', rows: '2', maxlength: '1000', value: t.note || '', placeholder: 'A note (optional)', 'aria-label': 'Note' });
+    const form = el('form', { class: 'mn-form', onsubmit: async e => {
+      e.preventDefault();
+      const p = C.parseAmount(amount.value);
+      if (!p) { toast('Enter an amount, e.g. 12.50.'); amount.focus(); return; }
+      if (!desc.value.trim()) { desc.focus(); return; }
+      const row = { description: desc.value.trim().slice(0, 300), amount_pence: (dir === 'in' ? 1 : -1) * Math.abs(p), occurred_on: date.value || t.occurred_on, category: cat.value || null, note: note.value.trim() || null };
+      try { await q(sb.from('money_tx').update(row).eq('id', t.id)); } catch (er) { return; }
+      if (row.category && row.category !== t.category) learn(row.description, row.category);
+      Object.assign(t, row); sortTx(); dlg.close(); toast('Saved.'); draw();
+    } },
+      el('label', { class: 'pj-lbl' }, el('span', { class: 'lbl' }, 'Description'), desc),
+      el('div', { class: 'mn-two' }, el('label', { class: 'pj-lbl' }, el('span', { class: 'lbl' }, 'Amount (£)'), amount), el('label', { class: 'pj-lbl' }, el('span', { class: 'lbl' }, 'Date'), date)),
+      seg,
+      el('label', { class: 'pj-lbl' }, el('span', { class: 'lbl' }, 'Category'), cat),
+      el('label', { class: 'pj-lbl' }, el('span', { class: 'lbl' }, 'Note'), note),
+      el('div', { class: 'actions' }, el('button', { class: 'btn primary', type: 'submit' }, 'Save'),
+        el('button', { class: 'btn', type: 'button', onclick: () => dlg.close() }, 'Cancel'),
+        el('button', { class: 'btn danger mn-right', type: 'button', onclick: async () => { dlg.close(); await del(t); } }, 'Delete')));
+    const dlg = dialog('Edit payment', form);
+  }
+
+  // categories for this book: rename, give a monthly budget, add or remove
+  function catsDialog() {
+    const body = el('div', { class: 'mn-cats' });
+    const paint = () => body.replaceChildren(
+      el('p', { class: 'meta' }, `Categories for ${book().name}. A budget is per month; leave it empty for no budget.`),
+      ...['out', 'in'].map(kind => el('section', {},
+        el('h3', {}, kind === 'out' ? 'Spending' : 'Money in'),
+        catsOf(kind).map(c => {
+          const name = el('input', { class: 'field', maxlength: '60', value: c.name, 'aria-label': 'Category name' });
+          name.addEventListener('change', () => rename(c, name.value.trim()));
+          const budget = kind === 'out' ? el('input', { class: 'field mn-budget', inputmode: 'decimal', placeholder: 'No budget', 'aria-label': `Monthly budget for ${c.name}`,
+            value: c.budget_pence != null ? (c.budget_pence / 100).toFixed(c.budget_pence % 100 ? 2 : 0) : '' }) : null;
+          if (budget) budget.addEventListener('change', async () => {
+            const v = budget.value.trim() ? C.parseAmount(budget.value) : null;
+            if (budget.value.trim() && (v == null || v < 0)) { toast('Enter a budget in pounds, e.g. 300.'); return; }
+            try { await q(sb.from('money_categories').update({ budget_pence: v == null ? null : Math.abs(v) }).eq('id', c.id)); } catch (e) { return; }
+            c.budget_pence = v == null ? null : Math.abs(v); toast(v == null ? `${c.name}: no budget.` : `${c.name}: ${gbp(Math.abs(v), { whole: true })} a month.`); draw();
+          });
+          return el('div', { class: 'mn-crow' }, name, budget ? el('span', { class: 'mn-pound' }, '£', budget, el('small', {}, '/month')) : null,
+            el('button', { type: 'button', class: 'mn-del', title: 'Delete category', 'aria-label': `Delete ${c.name}`, onclick: () => remove(c) }, icon('trash', 15)));
+        }),
+        addRow(kind))));
+    const addRow = kind => {
+      const n = el('input', { class: 'field', maxlength: '60', placeholder: kind === 'out' ? 'New spending category' : 'New money-in category', 'aria-label': 'New category name' });
+      const go = async () => {
+        const v = n.value.trim(); if (!v) return;
+        if (M.cats.some(c => c.kind === kind && c.name.toLowerCase() === v.toLowerCase())) { toast('That category is already there.'); return; }
+        try { const row = await q(sb.from('money_categories').insert({ user_id: DS.uid(), book_id: M.book, name: v, kind, position: Date.now() / 1000 }).select().single()); M.cats.push(row); } catch (e) { return; }
+        paint(); draw();
+      };
+      n.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+      return el('div', { class: 'mn-crow add' }, n, el('button', { type: 'button', class: 'btn', onclick: go }, icon('plus', 14), ' Add'));
+    };
+    async function rename(c, v) {
+      if (!v || v === c.name) return;
+      if (M.cats.some(x => x !== c && x.kind === c.kind && x.name.toLowerCase() === v.toLowerCase())) { toast('That name is already used.'); paint(); return; }
+      const old = c.name;
+      try {
+        await q(sb.from('money_categories').update({ name: v }).eq('id', c.id));
+        await q(sb.from('money_tx').update({ category: v }).eq('book_id', M.book).eq('category', old));
+        await q(sb.from('money_rules').update({ category: v }).eq('book_id', M.book).eq('category', old));
+      } catch (e) { paint(); return; }
+      c.name = v; M.tx.forEach(t => { if (t.category === old) t.category = v; }); M.rules.forEach(r => { if (r.category === old) r.category = v; });
+      if (M.filter === old) M.filter = v;
+      toast(`Renamed to ${v}.`); draw();
+    }
+    async function remove(c) {
+      const n = M.tx.filter(t => t.category === c.name).length;
+      if (!confirm(`Delete the category “${c.name}”?${n ? ` Payments in it become uncategorised.` : ''}`)) return;
+      try {
+        await q(sb.from('money_tx').update({ category: null }).eq('book_id', M.book).eq('category', c.name));
+        await q(sb.from('money_rules').delete().eq('book_id', M.book).eq('category', c.name));
+        await q(sb.from('money_categories').delete().eq('id', c.id));
+      } catch (e) { return; }
+      M.cats = M.cats.filter(x => x !== c); M.tx.forEach(t => { if (t.category === c.name) t.category = null; }); M.rules = M.rules.filter(r => r.category !== c.name);
+      if (M.filter === c.name) M.filter = null;
+      paint(); draw();
+    }
+    paint();
+    const dlg = dialog('Categories & budgets', el('div', {}, body, el('div', { class: 'actions' }, el('button', { class: 'btn primary', type: 'button', onclick: () => dlg.close() }, 'Done'))), 'mn-catdlg');
+  }
+
+  /* ---------- import a bank statement (CSV) ---------- */
+  function importDialog() {
+    const body = el('div', { class: 'mn-imp' });
+    const file = el('input', { type: 'file', id: 'mn-file', class: 'mn-file', accept: '.csv,text/csv,text/plain' });
+    let rows = null, map = null, into = M.book;
+    const pickFile = () => body.replaceChildren(
+      el('p', { class: 'meta' }, 'Download your statement as a CSV file from your bank’s app or website (Monzo, Starling, Revolut, HSBC, Barclays, Lloyds, Nationwide and others all offer it), then choose it here. Importing the same statement twice is safe: lines already in are skipped.'),
+      el('label', { class: 'mn-drop', for: 'mn-file' }, icon('upload', 22), el('b', {}, 'Choose a statement file'), el('small', {}, 'or drop it here')), file);
+    const read = async f => {
+      if (!f) return;
+      if (f.size > 5 * 1024 * 1024) { toast('That file is too big for a statement (over 5 MB).'); return; }
+      const text = await f.text();
+      rows = C.parseCSV(text);
+      if (rows.length < 2) { toast('That file doesn’t look like a statement. Choose the CSV export from your bank.'); return; }
+      map = { ...C.detect(rows), flip: false };
+      preview();
+    };
+    file.addEventListener('change', () => read(file.files[0]));
+    body.addEventListener('dragover', e => { e.preventDefault(); body.classList.add('drag'); });
+    body.addEventListener('dragleave', () => body.classList.remove('drag'));
+    body.addEventListener('drop', e => { e.preventDefault(); body.classList.remove('drag'); read(e.dataTransfer.files[0]); });
+
+    async function preview() {
+      const { tx, skipped } = C.toTx(rows, map);
+      const colSel = (key, label, allowNone) => {
+        const s = el('select', { class: 'field', 'aria-label': label },
+          allowNone ? el('option', { value: '-1' }, '—') : null,
+          map.names.map((n, i) => el('option', { value: String(i) }, n)));
+        s.value = String(map[key]);
+        s.addEventListener('change', () => { map[key] = +s.value; if (key === 'amount' && map.amount >= 0) { map.out = -1; map.inn = -1; } if ((key === 'out' || key === 'inn') && map[key] >= 0) map.amount = -1; preview(); });
+        return el('label', { class: 'pj-lbl' }, el('span', { class: 'lbl' }, label), s);
+      };
+      const two = map.amount < 0;
+      const flip = el('input', { type: 'checkbox', id: 'mn-flip', checked: map.flip, onchange: e => { map.flip = e.target.checked; preview(); } });
+      const order = el('select', { class: 'field', 'aria-label': 'Date order', onchange: e => { map.order = e.target.value; preview(); } },
+        el('option', { value: 'dmy' }, 'Day first (UK, 04/10/2026)'), el('option', { value: 'mdy' }, 'Month first (US, 10/04/2026)'));
+      order.value = map.order;
+      const bookSel = el('select', { class: 'field', 'aria-label': 'Import into', onchange: e => { into = e.target.value; } }, M.books.map(b => el('option', { value: b.id }, b.name)));
+      bookSel.value = into;
+      // how many of these are already in (matching lines from an earlier import)
+      let existing = new Set();
+      if (tx.length) {
+        const dates = tx.map(t => t.occurred_on).sort();
+        try {
+          const have = await q(sb.from('money_tx').select('import_key').eq('book_id', into).not('import_key', 'is', null).gte('occurred_on', dates[0]).lte('occurred_on', dates[dates.length - 1]).limit(20000));
+          existing = new Set(have.map(h => h.import_key));
+        } catch (e) {}
+      }
+      const fresh = tx.filter(t => !existing.has(t.import_key));
+      const dates = tx.map(t => t.occurred_on).sort();
+      const ins = tx.filter(t => t.amount_pence > 0).length, outs = tx.length - ins;
+      body.replaceChildren(...[
+        el('div', { class: 'mn-map' },
+          colSel('date', 'Date column'), colSel('desc', 'Description column'),
+          two ? [colSel('out', 'Money out column', true), colSel('inn', 'Money in column', true)] : colSel('amount', 'Amount column', true),
+          el('label', { class: 'pj-lbl' }, el('span', { class: 'lbl' }, 'Dates are written'), order),
+          el('label', { class: 'pj-lbl' }, el('span', { class: 'lbl' }, 'Import into'), bookSel)),
+        two ? null : el('label', { class: 'ls-check', for: 'mn-flip' }, flip, el('span', {}, 'My bank shows spending as positive numbers (swap money in and out)')),
+        tx.length ? el('p', { class: 'mn-sum' }, el('b', {}, `${tx.length} payments`), ` from ${fmt(dates[0], { day: 'numeric', month: 'short', year: 'numeric' })} to ${fmt(dates[dates.length - 1], { day: 'numeric', month: 'short', year: 'numeric' })}: ${outs} out, ${ins} in. `,
+          existing.size > 0 && fresh.length < tx.length ? el('span', {}, `${tx.length - fresh.length} already imported, so `, el('b', {}, `${fresh.length} new`), '. ') : null,
+          skipped.length ? el('span', { class: 'mn-warn' }, `${skipped.length} line${skipped.length === 1 ? '' : 's'} skipped (no date or amount).`) : null)
+          : el('p', { class: 'mn-warn' }, 'No payments found with these columns. Check the columns above match your file.'),
+        tx.length ? el('div', { class: 'mn-prev' }, el('table', {},
+          el('thead', {}, el('tr', {}, el('th', {}, 'Date'), el('th', {}, 'Description'), el('th', {}, 'Category'), el('th', { class: 'num' }, 'Amount'))),
+          el('tbody', {}, tx.slice(0, 8).map(t => el('tr', { class: existing.has(t.import_key) ? 'dup' : '' },
+            el('td', {}, fmt(t.occurred_on, { day: 'numeric', month: 'short' })), el('td', {}, t.description),
+            el('td', {}, guessCat(t.description, t.amount_pence > 0) || '—'), el('td', { class: 'num' }, amt(t.amount_pence, { plus: true }, t.amount_pence > 0 ? 'in' : 'out'))))))) : null,
+        tx.length > 8 ? el('p', { class: 'meta' }, `…and ${tx.length - 8} more.`) : null,
+        el('div', { class: 'actions' },
+          el('button', { type: 'button', class: 'btn primary', disabled: !fresh.length, onclick: () => doImport(fresh) }, fresh.length ? `Import ${fresh.length} payment${fresh.length === 1 ? '' : 's'}` : 'Nothing new to import'),
+          el('button', { type: 'button', class: 'btn', onclick: () => { rows = null; file.value = ''; pickFile(); } }, 'Choose another file'))].filter(Boolean));
+    }
+    async function doImport(list) {
+      const btn = body.querySelector('.btn.primary'); btn.disabled = true; btn.textContent = 'Importing…';
+      // categories: what you've taught it for this book first, then a sensible guess
+      const target = into;
+      if (target !== M.book) { M.book = target; store('mn_book', target); M.view = 'book'; await loadBook(); }
+      const rowsOut = list.map(t => ({ user_id: DS.uid(), book_id: target, occurred_on: t.occurred_on, amount_pence: t.amount_pence, description: t.description,
+        category: guessCat(t.description, t.amount_pence > 0) || null, source: 'import', import_key: t.import_key }));
+      let done = 0;
+      try {
+        for (let i = 0; i < rowsOut.length; i += 400) {
+          await q(sb.from('money_tx').upsert(rowsOut.slice(i, i + 400), { onConflict: 'user_id,book_id,import_key', ignoreDuplicates: true }));
+          done += Math.min(400, rowsOut.length - i);
+        }
+      } catch (e) { btn.disabled = false; btn.textContent = 'Try again'; return; }
+      const sorted = rowsOut.filter(r => r.category).length;
+      // show the month the statement ends in, if this month has none of it
+      const latest = rowsOut.map(r => r.occurred_on).sort().pop();
+      if (!rowsOut.some(r => r.occurred_on >= M.month && r.occurred_on <= monthEnd(M.month))) M.month = monthStart(latest);
+      await loadBook();
+      dlg.close();
+      toast(`Imported ${done} payment${done === 1 ? '' : 's'}${sorted ? `, ${sorted} sorted into categories` : ''}.${done - sorted ? ' Sort the rest in the list; it learns as you go.' : ''}`);
+      draw();
+    }
+    pickFile();
+    const dlg = dialog('Import a bank statement', body, 'mn-impdlg');
+  }
+
+  /* =====================================================================
+     Net worth: things you own (and owe), added by you, with their value over time
+     ===================================================================== */
+  const KINDS = ['Stocks & shares ISA', 'Cash ISA', 'Lifetime ISA', 'Pension', 'Shares', 'Funds', 'Crypto', 'Savings', 'Current account', 'Premium Bonds', 'Property', 'Business stake', 'Other', 'Mortgage', 'Loan', 'Credit card'];
+  const DEBT = new Set(['Mortgage', 'Loan', 'Credit card']);
+  const valuesOf = h => M.values.filter(v => v.holding_id === h.id);
+  const valueAt = (h, d) => { let v = null; for (const x of valuesOf(h)) if (x.valued_on <= d) v = x; else break; return v; };
+
+  function worthView() {
+    const t0 = today(), month0 = monthStart(t0);
+    const total = d => M.holdings.reduce((a, h) => a + ((valueAt(h, d) || {}).value_pence || 0), 0);
+    const now = total(t0), ago = total(addDays(t0, -30)), owned = M.holdings.filter(h => !DEBT.has(h.kind)).reduce((a, h) => a + Math.max(0, (valueAt(h, t0) || {}).value_pence || 0), 0);
+    const owe = -M.holdings.filter(h => DEBT.has(h.kind)).reduce((a, h) => a + ((valueAt(h, t0) || {}).value_pence || 0), 0);
+    const first = M.values.length ? monthStart(M.values[0].valued_on) : month0;
+    const months = []; for (let m = first; m <= month0 && months.length < 60; m = addMonths(m, 1)) months.push(m);
+    const points = months.slice(-24).map(m => ({ m, v: total(m === month0 ? t0 : monthEnd(m)) }));
+    const k = (label, value, note, cls) => el('div', { class: 'mn-kpi' + (cls ? ' ' + cls : '') }, el('span', {}, label), el('b', {}, value), note ? el('small', {}, note) : null);
+    return [
+      el('div', { class: 'mn-kpis' },
+        k('Net worth', amt(now), 'everything you own, minus what you owe', now < 0 ? 'neg' : ''),
+        k('Last 30 days', amt(now - ago, { plus: true }), now - ago >= 0 ? 'up' : 'down', now - ago < 0 ? 'neg' : 'pos'),
+        k('You own', amt(owned), `${M.holdings.filter(h => !DEBT.has(h.kind)).length} investments & accounts`),
+        k('You owe', amt(owe), owe ? plural(M.holdings.filter(h => DEBT.has(h.kind)).length, 'debt') : 'nothing added')),
+      worthChart(points),
+      holdingsCard()];
+  }
+  function worthChart(points) {
+    const card = el('section', { class: 'mn-card mn-worthchart' }, el('div', { class: 'mn-ch' }, el('h3', {}, 'Net worth over time')));
+    if (points.length < 2 || !M.values.length) { card.append(el('p', { class: 'mn-empty' }, 'Your net worth line starts once values have been updated in two different months. Update them every month or so.')); return card; }
+    const W = chartWidth(1), H = 220, L = 64, B = 26, T = 12, R = 10, plot = H - B - T;
+    // round steps for the axis (£10,000, £20,000…), starting from £0 unless it dips below
+    const vs = points.map(p => p.v), rawLo = Math.min(0, ...vs), rawHi = Math.max(...vs, 100);
+    const rough = (rawHi - rawLo) / 3, mag = Math.pow(10, Math.floor(Math.log10(rough))), stepV = [1, 2, 2.5, 5, 10].map(k => k * mag).find(s => s >= rough);
+    const lo = Math.floor(rawLo / stepV) * stepV, hi = Math.ceil(rawHi / stepV) * stepV, span = hi - lo || 1;
+    const x = i => L + (W - L - R) * (points.length === 1 ? 0 : i / (points.length - 1)), y = v => T + plot - (v - lo) / span * plot;
+    let svg = '';
+    for (let v = lo; v <= hi + 1; v += stepV) { const yy = y(v).toFixed(1); svg += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" class="mn-grid-l"/><text x="${L - 8}" y="${(+yy + 4).toFixed(1)}" text-anchor="end" class="mn-axis mn-amt">${esc(gbp(v, { whole: true }))}</text>`; }
+    const line = points.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(' ');
+    svg += `<path d="${line} L${x(points.length - 1).toFixed(1)},${(T + plot).toFixed(1)} L${x(0).toFixed(1)},${(T + plot).toFixed(1)} Z" class="mn-area"/><path d="${line}" class="mn-line"/>`;
+    const step = Math.ceil(points.length / 8);
+    points.forEach((p, i) => { if (i % step === 0 || i === points.length - 1) svg += `<text x="${x(i).toFixed(1)}" y="${H - 8}" text-anchor="middle" class="mn-axis">${esc(fmt(p.m, { month: 'short' }) + (p.m.slice(5, 7) === '01' || i === 0 ? ' ’' + p.m.slice(2, 4) : ''))}</text>`; });
+    const lp = points[points.length - 1];
+    svg += `<circle cx="${x(points.length - 1).toFixed(1)}" cy="${y(lp.v).toFixed(1)}" r="4.5" class="mn-dotend"/>`;
+    svg += `<line class="mn-cross" x1="0" x2="0" y1="${T}" y2="${T + plot}" visibility="hidden"/><circle class="mn-crossdot" r="4.5" visibility="hidden"/>`;
+    const fig = el('figure', { class: 'mn-chart' });
+    fig.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Net worth by month">${svg}</svg>`;
+    const tipEl = el('div', { class: 'mn-tip-pop mn-amt', hidden: true }); fig.append(tipEl);
+    const svgEl = fig.querySelector('svg'), cross = fig.querySelector('.mn-cross'), dot = fig.querySelector('.mn-crossdot');
+    fig.addEventListener('pointermove', e => {
+      const r = svgEl.getBoundingClientRect(), px = (e.clientX - r.left) / r.width * W;
+      const i = Math.max(0, Math.min(points.length - 1, Math.round((px - L) / ((W - L - R) / Math.max(1, points.length - 1)))));
+      const cx = x(i), cy = y(points[i].v);
+      cross.setAttribute('x1', cx); cross.setAttribute('x2', cx); cross.setAttribute('visibility', 'visible');
+      dot.setAttribute('cx', cx); dot.setAttribute('cy', cy); dot.setAttribute('visibility', 'visible');
+      tipEl.textContent = `${monthName(points[i].m)} · ${gbp(points[i].v)}`; tipEl.hidden = false;
+      const fr = fig.getBoundingClientRect(), z = fig.offsetWidth ? fr.width / fig.offsetWidth : 1;
+      tipEl.style.left = (cx / W * r.width + r.left - fr.left) / z + 'px'; tipEl.style.top = (cy / H * r.height + r.top - fr.top) / z - 14 + 'px';
+    });
+    fig.addEventListener('pointerleave', () => { tipEl.hidden = true; cross.setAttribute('visibility', 'hidden'); dot.setAttribute('visibility', 'hidden'); });
+    card.append(fig, el('details', { class: 'mn-table' }, el('summary', {}, 'Show as a table'),
+      el('table', {}, el('thead', {}, el('tr', {}, el('th', {}, 'Month'), el('th', {}, 'Net worth'))),
+        el('tbody', {}, points.map(p => el('tr', {}, el('td', {}, monthName(p.m)), el('td', {}, amt(p.v))))))));
+    return card;
+  }
+  function holdingsCard() {
+    const t0 = today();
+    const name = el('input', { class: 'field', id: 'mn-hname', maxlength: '80', placeholder: 'e.g. Vanguard ISA, Workplace pension, Bitcoin', 'aria-label': 'Name' });
+    const kind = el('select', { class: 'field', id: 'mn-hkind', 'aria-label': 'Type' }, KINDS.map(k => el('option', { value: k }, k)));
+    const value = el('input', { class: 'field', id: 'mn-hval', inputmode: 'decimal', placeholder: 'Value today, e.g. 12,500', 'aria-label': 'Value in pounds' });
+    const add = async e => {
+      e.preventDefault();
+      const n = name.value.trim(), p = C.parseAmount(value.value);
+      if (!n) { name.focus(); return; }
+      if (p == null) { toast('Enter its value in pounds, e.g. 12,500.'); value.focus(); return; }
+      try {
+        const h = await q(sb.from('money_holdings').insert({ user_id: DS.uid(), name: n, kind: kind.value, position: Date.now() / 1000 }).select().single());
+        const v = await q(sb.from('money_values').insert({ user_id: DS.uid(), holding_id: h.id, valued_on: t0, value_pence: DEBT.has(kind.value) ? -Math.abs(p) : p }).select().single());
+        M.holdings.push(h); M.values.push(v);
+      } catch (er) { return; }
+      toast(`Added ${n}.`); draw('mn-hname');
+    };
+    const rows = M.holdings.map(h => {
+      const vs = valuesOf(h), cur = vs[vs.length - 1], prev = vs[vs.length - 2];
+      const upd = el('input', { class: 'field mn-hupd', inputmode: 'decimal', placeholder: 'New value', 'aria-label': `New value for ${h.name}` });
+      const save = async () => {
+        const p = C.parseAmount(upd.value); if (p == null) { toast('Enter the value in pounds.'); upd.focus(); return; }
+        const vp = DEBT.has(h.kind) ? -Math.abs(p) : p;
+        try {
+          const v = await q(sb.from('money_values').upsert({ user_id: DS.uid(), holding_id: h.id, valued_on: t0, value_pence: vp }, { onConflict: 'holding_id,valued_on' }).select().single());
+          M.values = M.values.filter(x => !(x.holding_id === h.id && x.valued_on === t0)); M.values.push(v); M.values.sort((a, b) => (a.valued_on < b.valued_on ? -1 : a.valued_on > b.valued_on ? 1 : 0));
+        } catch (er) { return; }
+        toast(`${h.name}: ${gbp(vp)}.`); draw();
+      };
+      upd.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); save(); } });
+      const change = cur && prev ? cur.value_pence - prev.value_pence : null;
+      return el('div', { class: 'mn-hold' + (DEBT.has(h.kind) ? ' debt' : '') },
+        el('div', { class: 'mn-hn' }, el('b', {}, h.name), el('span', { class: 'mn-kind' }, h.kind), h.note ? el('small', {}, h.note) : null),
+        el('div', { class: 'mn-hv' }, cur ? amt(cur.value_pence) : el('span', { class: 'mn-empty' }, 'no value yet'),
+          el('small', {}, cur ? `updated ${fmt(cur.valued_on, { day: 'numeric', month: 'short', year: cur.valued_on.slice(0, 4) !== t0.slice(0, 4) ? 'numeric' : undefined })}` : '',
+            change ? [' · ', amt(change, { plus: true }, change > 0 ? 'in' : 'out')] : null)),
+        el('div', { class: 'mn-hu' }, upd, el('button', { type: 'button', class: 'btn', onclick: save }, 'Update')),
+        el('div', { class: 'mn-hm' },
+          el('button', { type: 'button', class: 'linkish', onclick: () => holdingDialog(h) }, 'Edit'),
+          el('button', { type: 'button', class: 'mn-del', title: 'Delete', 'aria-label': `Delete ${h.name}`, onclick: () => removeHolding(h) }, icon('trash', 15))));
+    });
+    return el('section', { class: 'mn-card mn-holdings' },
+      el('div', { class: 'mn-ch' }, el('h3', {}, 'Investments & accounts')),
+      rows.length ? el('div', { class: 'mn-holdlist' }, rows) : el('p', { class: 'mn-empty' }, 'Add what you own: ISAs, pensions, shares, crypto, savings, property. Add debts too (mortgage, loans, cards) and they count against your net worth.'),
+      el('form', { class: 'mn-hadd', onsubmit: add }, name, kind, value, el('button', { type: 'submit', class: 'btn primary' }, icon('plus', 14), ' Add')),
+      el('p', { class: 'mn-tip' }, 'Update values whenever you check them (monthly is plenty). Each update is kept, so the chart shows how your net worth grows.'));
+  }
+  function holdingDialog(h) {
+    const name = el('input', { class: 'field', maxlength: '80', value: h.name, 'aria-label': 'Name' });
+    const kind = el('select', { class: 'field', 'aria-label': 'Type' }, KINDS.map(k => el('option', { value: k }, k))); kind.value = KINDS.includes(h.kind) ? h.kind : 'Other';
+    const note = el('textarea', { class: 'field', rows: '2', maxlength: '500', value: h.note || '', placeholder: 'A note (optional), e.g. provider or account ending', 'aria-label': 'Note' });
+    const form = el('form', { class: 'mn-form', onsubmit: async e => {
+      e.preventDefault(); if (!name.value.trim()) return;
+      const row = { name: name.value.trim(), kind: kind.value, note: note.value.trim() || null };
+      try { await q(sb.from('money_holdings').update(row).eq('id', h.id)); } catch (er) { return; }
+      // a debt's values are kept negative
+      if (DEBT.has(row.kind) !== DEBT.has(h.kind)) {
+        const flipIds = valuesOf(h).filter(v => (DEBT.has(row.kind) ? v.value_pence > 0 : v.value_pence < 0));
+        for (const v of flipIds) { try { await q(sb.from('money_values').update({ value_pence: -v.value_pence }).eq('id', v.id)); v.value_pence = -v.value_pence; } catch (er) {} }
+      }
+      Object.assign(h, row); dlg.close(); toast('Saved.'); draw();
+    } },
+      el('label', { class: 'pj-lbl' }, el('span', { class: 'lbl' }, 'Name'), name),
+      el('label', { class: 'pj-lbl' }, el('span', { class: 'lbl' }, 'Type'), kind),
+      el('label', { class: 'pj-lbl' }, el('span', { class: 'lbl' }, 'Note'), note),
+      valuesOf(h).length ? el('details', { class: 'mn-table' }, el('summary', {}, `Value history (${valuesOf(h).length})`),
+        el('table', {}, el('tbody', {}, valuesOf(h).slice().reverse().map(v => el('tr', {}, el('td', {}, fmt(v.valued_on, { day: 'numeric', month: 'short', year: 'numeric' })), el('td', {}, amt(v.value_pence))))))) : null,
+      el('div', { class: 'actions' }, el('button', { class: 'btn primary', type: 'submit' }, 'Save'), el('button', { class: 'btn', type: 'button', onclick: () => dlg.close() }, 'Cancel')));
+    const dlg = dialog('Edit ' + h.name, form);
+  }
+  async function removeHolding(h) {
+    if (!confirm(`Delete “${h.name}” and its value history? It comes off your net worth.`)) return;
+    try { await q(sb.from('money_holdings').delete().eq('id', h.id)); } catch (e) { return; }
+    M.holdings = M.holdings.filter(x => x !== h); M.values = M.values.filter(v => v.holding_id !== h.id);
+    toast('Deleted.'); draw();
+  }
+
+  let resizeT = 0, lastW = window.innerWidth;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeT);
+    resizeT = setTimeout(() => { if (state.view === 'money' && page && page.isConnected && Math.abs(window.innerWidth - lastW) > 40 && !document.querySelector('dialog.mn-dlg')) { lastW = window.innerWidth; draw(); } }, 250);
+  });
+
+  /* ---------- wiring: the Money tab in the menu ---------- */
+  DS.views.money = viewMoney;
+  DS.money = { core: C, state: M };
+  function ensureNav() {
+    const nav = document.querySelector('#app nav.nav');
+    if (!nav) return;
+    let b = nav.querySelector('[data-money]');
+    if (!b) {
+      b = el('button', { 'data-money': '', onclick: () => DS.go('money') }, 'Money');
+      const after = nav.querySelector('[data-listen]') || nav.querySelector('[data-create]');
+      if (after) after.after(b); else nav.append(b);
+    }
+    if (state.view === 'money') b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  }
+  let pending = false;
+  const app = document.getElementById('app');
+  if (app) new MutationObserver(() => {
+    if (pending) return;
+    pending = true;
+    requestAnimationFrame(() => { pending = false; ensureNav(); });
+  }).observe(app, { childList: true, subtree: true });
+  if (location.hash.slice(1) === 'money') {
+    state.view = 'money';
+    if (state.user && document.getElementById('main')) DS.go('money');
+  }
+})();
