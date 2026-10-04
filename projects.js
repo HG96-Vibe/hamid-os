@@ -8,7 +8,8 @@
   if (!DS) return;
   const { sb, q, el, state, toast, refresh, today, addDays, weekStart, monthStart, fmt, timeAgo } = DS;
 
-  const COLORS = ['#d97706', '#f59e0b', '#ef4444', '#ec4899', '#8b5cf6', '#6366f1', '#0ea5e9', '#14b8a6', '#10b981', '#84cc16'];
+  const COLORS = ['#d97706', '#f59e0b', '#ef4444', '#ec4899', '#8b5cf6', '#6366f1', '#0ea5e9', '#14b8a6', '#10b981', '#84cc16',
+    '#2563eb', '#d946ef', '#be123c', '#94a3b8', '#ca8a04']; // + royal blue, fuchsia, crimson, silver, gold
   const QUIET_DAYS = 10;
 
   /* ---------- data ---------- */
