@@ -939,21 +939,66 @@
     const dlg = dialog('Categories & budgets', el('div', {}, body, el('div', { class: 'actions' }, el('button', { class: 'btn primary', type: 'button', onclick: () => dlg.close() }, 'Done'))), 'mn-catdlg');
   }
 
-  /* ---------- import a bank statement (CSV) ---------- */
+  /* ---------- statement files: Excel (SheetJS) and PDF (PDF.js), loaded only when needed ---------- */
+  const libs = {};
+  const loadLib = src => libs[src] || (libs[src] = new Promise((ok, bad) => {
+    const s = document.createElement('script'); s.src = src; s.onload = ok;
+    s.onerror = () => { delete libs[src]; bad(Object.assign(new Error('Couldn’t load the file reader. Check your connection and try again.'), { friendly: true })); };
+    document.head.append(s);
+  }));
+  const friendly = m => Object.assign(new Error(m), { friendly: true });
+  // every sheet is read; the one with the most payments in it is used
+  async function readExcel(f) {
+    await loadLib('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+    const wb = window.XLSX.read(await f.arrayBuffer(), { type: 'array', cellDates: true });
+    const iso = d => { const x = new Date(d.getTime() + 12 * 3600e3); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; };
+    const cell = v => v instanceof Date ? iso(v) : typeof v === 'number' ? (Number.isInteger(v) ? String(v) : v.toFixed(2)) : String(v == null ? '' : v).trim();
+    let best = [], bestN = -1;
+    for (const name of wb.SheetNames) {
+      const rows = window.XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: '', blankrows: false }).map(r => r.map(cell)).filter(r => r.some(Boolean));
+      if (rows.length < 2) continue;
+      const n = C.toTx(rows, C.detect(rows)).tx.length;
+      if (n > bestN) { best = rows; bestN = n; }
+    }
+    return best;
+  }
+  async function readPdf(f) {
+    await loadLib('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+    const lib = window.pdfjsLib;
+    lib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    let pdf;
+    try { pdf = await lib.getDocument({ data: new Uint8Array(await f.arrayBuffer()) }).promise; }
+    catch (e) { throw friendly(e && e.name === 'PasswordException' ? 'That PDF is password-protected. Download it without a password, or use the CSV or Excel version.' : 'Couldn’t open that PDF. Try the CSV or Excel version from your bank.'); }
+    const pages = [];
+    for (let i = 1; i <= Math.min(pdf.numPages, 60); i++) {
+      const page = await pdf.getPage(i), vp = page.getViewport({ scale: 1 }), tc = await page.getTextContent();
+      pages.push(tc.items.filter(it => it.str && it.str.trim()).map(it => ({ str: it.str, x: it.transform[4], y: vp.height - it.transform[5], w: it.width })));
+    }
+    if (!pages.some(p => p.length)) throw friendly('That PDF is a scanned picture, so there’s no text to read. Use the CSV or Excel version from your bank.');
+    return C.pdfRows(pages, { today: today() });
+  }
+
+  /* ---------- import a bank statement (CSV, Excel or PDF) ---------- */
   function importDialog() {
     const body = el('div', { class: 'mn-imp' });
-    const file = el('input', { type: 'file', id: 'mn-file', class: 'mn-file', accept: '.csv,text/csv,text/plain' });
+    const file = el('input', { type: 'file', id: 'mn-file', class: 'mn-file', accept: '.csv,.xlsx,.xls,.pdf,text/csv,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel' });
+    let from = 'csv';
     let rows = null, map = null, into = M.book;
     const pickFile = () => body.replaceChildren(
-      el('p', { class: 'meta' }, 'Download your statement as a CSV file from your bank’s app or website (Monzo, Starling, Revolut, HSBC, Barclays, Lloyds, Nationwide and others all offer it), then choose it here. Importing the same statement twice is safe: lines already in are skipped.'),
-      el('label', { class: 'mn-drop', for: 'mn-file' }, icon('upload', 22), el('b', {}, 'Choose a statement file'), el('small', {}, 'or drop it here')), file,
+      el('p', { class: 'meta' }, 'Download your statement from your bank’s app or website as a CSV, Excel or PDF file, then choose it here. CSV and Excel are the most reliable; with a PDF, check the payments in the preview before importing. Importing the same statement twice is safe: lines already in are skipped.'),
+      el('label', { class: 'mn-drop', for: 'mn-file' }, icon('upload', 22), el('b', {}, 'Choose a statement file'), el('small', {}, 'CSV, Excel or PDF · or drop it here')), file,
       el('div', { class: 'actions' }, el('button', { type: 'button', class: 'btn', onclick: () => dlg.close() }, 'Cancel')));
     const read = async f => {
       if (!f) return;
-      if (f.size > 5 * 1024 * 1024) { toast('That file is too big for a statement (over 5 MB).'); return; }
-      const text = await f.text();
-      rows = C.parseCSV(text);
-      if (rows.length < 2) { toast('That file doesn’t look like a statement. Choose the CSV export from your bank.'); return; }
+      const ext = ((f.name || '').match(/\.([a-z0-9]+)$/i) || [])[1]?.toLowerCase() || '';
+      if (f.size > 20 * 1024 * 1024) { toast('That file is too big for a statement (over 20 MB).'); return; }
+      from = ext === 'pdf' || f.type === 'application/pdf' ? 'pdf' : ['xlsx', 'xls'].includes(ext) ? 'excel' : 'csv';
+      const busy = el('p', { class: 'meta mn-reading' }, from === 'pdf' ? 'Reading the PDF…' : from === 'excel' ? 'Reading the spreadsheet…' : 'Reading…');
+      body.querySelector('.mn-drop')?.after(busy);
+      try { rows = from === 'pdf' ? await readPdf(f) : from === 'excel' ? await readExcel(f) : C.parseCSV(await f.text()); }
+      catch (e) { busy.remove(); toast(e && e.friendly ? e.message : 'Couldn’t read that file. Try the CSV or Excel version from your bank.'); return; }
+      busy.remove();
+      if (rows.length < 2) { toast(from === 'pdf' ? 'Couldn’t find the payments in that PDF. Try the CSV or Excel version from your bank.' : 'That file doesn’t look like a statement. Choose the CSV, Excel or PDF statement from your bank.'); return; }
       map = { ...C.detect(rows), flip: false };
       preview();
     };
@@ -1010,6 +1055,7 @@
           el('label', { class: 'pj-lbl' }, el('span', { class: 'lbl' }, 'Dates are written'), order),
           el('label', { class: 'pj-lbl' }, el('span', { class: 'lbl' }, 'Import into'), bookSel)),
         two ? null : el('label', { class: 'ls-check', for: 'mn-flip' }, flip, el('span', {}, 'My bank shows spending as positive numbers (swap money in and out)')),
+        from === 'pdf' && tx.length ? el('p', { class: 'mn-pdfnote' }, 'Read from a PDF: check the dates, descriptions and amounts below match your statement before importing.') : null,
         tx.length ? el('p', { class: 'mn-sum' }, el('b', {}, `${tx.length} payments`), ` from ${fmt(dates[0], { day: 'numeric', month: 'short', year: 'numeric' })} to ${fmt(dates[dates.length - 1], { day: 'numeric', month: 'short', year: 'numeric' })}: ${outs} out, ${ins} in. `,
           existing.size > 0 && fresh.length < tx.length ? el('span', {}, `${tx.length - fresh.length} already imported, so `, el('b', {}, `${fresh.length} new`), '. ') : null,
           dupDD.size ? el('span', {}, `${dupDD.size} already ticked off as direct debit${dupDD.size === 1 ? '' : 's'}, so left out. `) : null,

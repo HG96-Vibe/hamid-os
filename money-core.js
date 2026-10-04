@@ -108,7 +108,7 @@
     date: /(^|\b)(transaction\s*)?date\b|^completed date|^started date|^posted/i,
     desc: /description|^name$|counter\s*party|merchant|payee|details|narrative|^memo$|reference|^transaction$|^particulars/i,
     amount: /^(amount|value|transaction amount|amount \(gbp\)|amount gbp|net amount)$/i,
-    out: /paid out|money out|debit|withdrawal|spent|^out$/i,
+    out: /paid out|money out|debit|withdrawal|spent|^\W*out\W*$/i,
     in: /paid in|money in|credit|deposit|received|^in$/i,
     skip: /balance|currency|fee|^type$|category|emoji|notes|address|receipt|^time$|state|product|account|^number$|sort code/i
   };
@@ -231,6 +231,132 @@
     return null;
   }
 
+  /* ---------- PDF statements ----------
+     A PDF has no table, just words placed on the page. pdfRows rebuilds the table from where they sit:
+     it finds the heading line (Date, Description, Paid out, Paid in, Balance…), puts each word under the
+     heading it lines up with, joins descriptions that run onto a second line, fills in a date left blank
+     because it's the same day as the line above, and adds the year to dates printed without one ("4 Oct").
+     pages: [[{ str, x, y, w }]] with y measured down the page. Returns rows (the first is the headings)
+     for detect / toTx, like a CSV. With no heading line it falls back to reading lines that start with a date. */
+  const MONEY = /^[-+(]?[£$€]?\s?\d{1,3}(?:,\d{3})*(?:\.\d{2})\)?(?:\s?(?:CR|DR|-))?$|^[-+(]?[£$€]?\s?\d+\.\d{2}\)?(?:\s?(?:CR|DR|-))?$/i;
+  const DAYMON = /^(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,9})\.?$/;
+  function pdfLines(items) {
+    const its = items.filter(i => String(i.str).trim()).map(i => ({ str: String(i.str).trim(), x: i.x, y: i.y, w: i.w || String(i.str).length * 4.5 }))
+      .sort((a, b) => a.y - b.y || a.x - b.x);
+    const lines = [];
+    for (const it of its) {
+      const L = lines.find(l => Math.abs(l.y - it.y) <= 3);
+      if (L) L.items.push(it); else lines.push({ y: it.y, items: [it] });
+    }
+    lines.forEach(l => l.items.sort((a, b) => a.x - b.x));
+    return lines.sort((a, b) => a.y - b.y);
+  }
+  // words close together form one cell; a wider gap starts the next
+  function cells(items, gap = 7) {
+    const out = [];
+    for (const it of items) {
+      const c = out[out.length - 1];
+      if (c && it.x - (c.x1) <= gap) { c.str += ' ' + it.str; c.x1 = Math.max(c.x1, it.x + it.w); }
+      else out.push({ str: it.str, x0: it.x, x1: it.x + it.w });
+    }
+    return out;
+  }
+  const HEADWORD = /^(date|transaction date|posting date|posted|description|details|transaction|transactions|payee|particulars|narrative|memo|reference|type|paid out|paid in|money out|money in|debit|credit|debits|credits|withdrawals?|deposits?|out|in|amount|balance|value|£out|£in)\b/i;
+  function isHeading(line) {
+    const cs = cells(line.items), t = cs.map(c => c.str.toLowerCase());
+    return t.some(x => /\bdate\b/.test(x)) && cs.filter(c => HEADWORD.test(c.str.replace(/[£()]/g, '').trim())).length >= 3;
+  }
+  const cleanHead = s => s.replace(/\(?£\)?|\(GBP\)|GBP/gi, ' ').replace(/\s+/g, ' ').trim();
+  function pdfRows(pages, opts) {
+    const o = opts || {};
+    let cols = null; const rows = [];
+    let last = null, lastDate = '';
+    const allText = [];
+    for (const page of pages) {
+      const lines = pdfLines(page);
+      lines.forEach(l => allText.push(l.items.map(i => i.str).join(' ')));
+      for (const line of lines) {
+        if (isHeading(line)) { cols = cells(line.items).map(c => ({ name: cleanHead(c.str), x0: c.x0, x1: c.x1 })); last = null; continue; }
+        if (!cols) continue;
+        // each word goes under the heading it overlaps most, or the nearest one
+        const vals = cols.map(() => []);
+        for (const it of line.items) {
+          let best = 0, bestScore = -Infinity;
+          cols.forEach((c, i) => {
+            const ov = Math.min(c.x1, it.x + it.w) - Math.max(c.x0, it.x);
+            const score = ov > 0 ? ov : -Math.min(Math.abs(c.x0 - it.x), Math.abs(c.x1 - (it.x + it.w)), Math.abs((c.x0 + c.x1) / 2 - (it.x + it.w / 2)));
+            if (score > bestScore) { bestScore = score; best = i; }
+          });
+          vals[best].push(it.str);
+        }
+        const row = vals.map(v => v.join(' ').trim());
+        const di = cols.findIndex(c => /date|posted/i.test(c.name));
+        const money = cols.map((c, i) => i !== di && !/desc|detail|transaction|payee|particular|narrative|memo|reference|type/i.test(c.name) && MONEY.test(row[i]));
+        const hasMoney = money.some(Boolean), hasDate = di >= 0 && !!row[di];
+        if (hasDate || hasMoney) {
+          if (di >= 0) { if (hasDate) lastDate = row[di]; else row[di] = lastDate; }
+          rows.push(row); last = row;
+        } else if (last) {
+          // a description running onto the next line (but not page totals or footers)
+          const di2 = cols.findIndex(c => /desc|detail|transaction|payee|particular|narrative|memo/i.test(c.name));
+          const extra = row.filter(Boolean).join(' ');
+          if (di2 >= 0 && extra && !/carried forward|brought forward|total|page \d|continued/i.test(extra) && extra.length < 120) last[di2] = (last[di2] + ' ' + extra).trim();
+        }
+      }
+    }
+    let out;
+    if (cols && rows.length) out = [cols.map(c => c.name), ...rows];
+    else out = pdfFallback(pages);
+    return fillYears(out, o.year || mainYear(allText.join(' ')), o.today);
+  }
+  // no heading line: lines that start with a date and end in money ("04 Oct  Tesco  12.50  1,234.56")
+  function pdfFallback(pages) {
+    const rows = [];
+    for (const page of pages) for (const line of pdfLines(page)) {
+      const cs = cells(line.items), words = cs.map(c => c.str);
+      if (!words.length) continue;
+      const first = words[0];
+      if (!(parseDate(first) || parseDate(first, 'mdy') || DAYMON.test(first))) continue;
+      const nums = []; let i = words.length - 1;
+      while (i > 0 && MONEY.test(words[i]) && nums.length < 2) nums.unshift(words[i--]);
+      if (!nums.length) continue;
+      rows.push([first, words.slice(1, i + 1).join(' '), nums[0], nums[1] || '']);
+    }
+    if (!rows.length) return [];
+    // a running balance tells us which way each amount went
+    const bal = rows.map(r => parseAmount(r[3]));
+    for (let k = 1; k < rows.length; k++) {
+      const a = Math.abs(parseAmount(rows[k][2]) || 0);
+      if (bal[k] != null && bal[k - 1] != null && a && Math.abs(Math.abs(bal[k] - bal[k - 1]) - a) <= 1) rows[k][2] = (bal[k] < bal[k - 1] ? '-' : '') + (a / 100).toFixed(2);
+      else if (!/^[-(+]|CR$/i.test(rows[k][2].trim())) rows[k][2] = '-' + rows[k][2].replace(/^-/, '');
+    }
+    if (!/^[-(+]|CR$/i.test(rows[0][2].trim())) rows[0][2] = '-' + rows[0][2];
+    return [['Date', 'Description', 'Amount', 'Balance'], ...rows];
+  }
+  function mainYear(text) {
+    const n = {}; (String(text).match(/\b20\d{2}\b/g) || []).forEach(y => { n[y] = (n[y] || 0) + 1; });
+    const best = Object.keys(n).sort((a, b) => n[b] - n[a])[0];
+    return best ? +best : new Date().getFullYear();
+  }
+  // "4 Oct" → "4 Oct 2026" (a December line in a statement that runs into January gets the year before)
+  function fillYears(rows, year, today) {
+    if (!rows.length) return rows;
+    const di = rows[0].findIndex(h => /date|posted/i.test(String(h)));
+    if (di < 0) return rows;
+    const now = today || new Date().toISOString().slice(0, 10);
+    const months = rows.slice(1).map(r => { const m = String(r[di] || '').trim().match(DAYMON); return m ? m[2].toLowerCase().slice(0, 3) : null; });
+    const hasJan = months.includes('jan');
+    rows.slice(1).forEach((r, k) => {
+      const m = String(r[di] || '').trim().match(DAYMON); if (!m) return;
+      let y = year;
+      if (hasJan && months[k] === 'dec') y = year - 1;
+      let d = parseDate(`${m[1]} ${m[2]} ${y}`);
+      if (d && d > now && parseDate(`${m[1]} ${m[2]} ${y - 1}`)) { y -= 1; d = parseDate(`${m[1]} ${m[2]} ${y}`); }
+      if (d) r[di] = `${m[1]} ${m[2]} ${y}`;
+    });
+    return rows;
+  }
+
   const DEFAULTS = {
     personal: {
       out: ['Groceries', 'Eating out', 'Transport', 'Bills', 'Rent & mortgage', 'Subscriptions', 'Shopping', 'Health', 'Entertainment', 'Travel', 'Gifts', 'Other'],
@@ -242,7 +368,7 @@
     }
   };
 
-  const api = { parseAmount, gbp, parseDate, dateOrder, parseCSV, detect, toTx, quick, merchantKey, guess, DEFAULTS };
+  const api = { parseAmount, gbp, parseDate, dateOrder, parseCSV, detect, toTx, quick, merchantKey, guess, pdfRows, DEFAULTS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.MoneyCore = api;
 })(typeof window !== 'undefined' ? window : globalThis);
