@@ -168,6 +168,38 @@
 .mn-padd select.field option{background:#fff;color:var(--mn-ink)}
 .mn-padd .btn.primary{display:inline-flex;align-items:center;justify-content:center;gap:4px}
 
+/* loans & lending (Personal) */
+.mn-debts{align-items:stretch}
+.mn-dlist{display:grid}
+.mn-drow{display:grid;grid-template-columns:minmax(0,1fr);gap:6px;padding:10px 4px 12px;border-bottom:1px solid var(--mn-line)}
+.mn-drow>*,.mn-drow .mn-pn{grid-area:auto}
+.mn-drow.done{opacity:.6}
+.mn-dtop{display:flex;align-items:flex-start;gap:10px}
+.mn-dtop .mn-pn{flex:1 1 auto}
+.mn-dleft{display:grid;justify-items:end;text-align:right;white-space:nowrap}
+.mn-dleft>.mn-amt{font:800 17px var(--display);letter-spacing:-.01em}
+.mn-dleft small{font-size:12px;color:var(--mn-muted)}
+.mn-donetag{font-size:13px;font-weight:700;color:var(--mn-in)}
+.mn-drow .mn-bar i{background:var(--mn-in)}
+.mn-dmeta{display:flex;justify-content:space-between;gap:6px 12px;flex-wrap:wrap;font-size:12.5px;color:var(--mn-muted)}
+.mn-overdue{color:var(--mn-over);font-weight:700}
+.mn-soon{color:var(--mn-warn);font-weight:600}
+.mn-dlog{display:flex;gap:6px}
+.mn-dlog .field{background:#fff;color:var(--mn-ink);border-color:var(--mn-line);padding:6px 10px;font-size:14px;max-width:140px}
+.mn-dlog .btn{white-space:nowrap;color:var(--mn-ink);border-color:var(--mn-line);background:#fff;padding:6px 13px;font-size:13.5px}
+.mn-dclosed{margin-top:8px}
+.mn-dadd{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:8px;margin-top:12px;align-items:end}
+.mn-dadd .field{background:#fff;color:var(--mn-ink);border-color:var(--mn-line);padding:7px 10px;font-size:14px;color-scheme:light}
+.mn-dl{display:grid;gap:2px;font-size:12px;color:var(--mn-muted);min-width:0}
+.mn-dl .field{min-width:0;width:100%}
+.mn-dadd .btn.primary{display:inline-flex;align-items:center;justify-content:center;gap:4px}
+.mn-dpays h3{margin:0 0 6px;font:700 15px var(--display);color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.mn-dpays table{width:100%;border-collapse:collapse;font-size:14.5px}
+.mn-dpays td{padding:5px 6px;border-bottom:1px solid var(--line-soft)}
+.mn-dpays td.num{text-align:right;font-weight:700}
+.mn-dpays td:last-child{width:34px}
+.mn-dpays .meta{margin:0}
+
 /* dialogs */
 .mn-dlg .seg button{border:0;background:none;padding:7px 16px;font-size:13.5px;font-weight:600;color:var(--muted)}
 .mn-dlg .seg button.on{background:var(--i500);color:#fff}
@@ -240,6 +272,7 @@ html.light .mn-kpi:not(.in):not(.out):not(.pos):not(.neg){border-top-color:#c7d2
   .mn-pn{grid-area:n}.mn-pamt{grid-area:a}.mn-prow .mn-del{grid-area:x}
   .mn-pwhen{grid-area:w;display:flex;align-items:center;gap:8px;justify-items:start;text-align:left}
   .mn-padd{grid-template-columns:1fr 1fr}
+  .mn-dadd>.field:first-child{grid-column:1/-1}
   .mn-padd #mn-pname,.mn-padd #mn-pnote{grid-column:1/-1}
   .mn-actions .btn span:not(.mn-ic){display:none}
   .mn-actions .btn{padding:8px 11px}

@@ -56,10 +56,17 @@
         .order('occurred_on', { ascending: false }).order('created_at', { ascending: false }).limit(10000))]);
     if (!cats.length) cats = await seedCats(id);
     // your own list of direct debits and bills (Personal); a record only, never counted in money in / out
-    let planned = [];
-    if (isPersonal(id)) { try { planned = await q(sb.from('money_planned').select('*').eq('book_id', id).order('next_on')); } catch (e) {} }
+    // ... and loans / lending with their repayments (also a record only)
+    let planned = [], debts = [], debtPays = [];
+    if (isPersonal(id)) {
+      [planned, debts, debtPays] = await Promise.all([
+        q(sb.from('money_planned').select('*').eq('book_id', id).order('next_on')).catch(() => []),
+        q(sb.from('money_debts').select('*').eq('book_id', id).order('started_on')).catch(() => []),
+        q(sb.from('money_debt_payments').select('*').order('paid_on').limit(20000)).catch(() => [])]);
+      debtPays = debtPays.filter(x => debts.some(d => d.id === x.debt_id));
+    }
     if (M.book !== id) return;
-    Object.assign(M, { cats, rules, tx, planned });
+    Object.assign(M, { cats, rules, tx, planned, debts, debtPays });
   }
   // a new book starts with sensible categories (yours to rename, budget or delete)
   async function seedCats(id) {
@@ -149,7 +156,8 @@
       el('h2', {}, monthName(M.month)),
       el('button', { type: 'button', class: 'arrow', 'aria-label': 'Next month', onclick: () => changeMonth(addMonths(M.month, 1)) }, '›'),
       isNow ? null : el('button', { type: 'button', class: 'pill', onclick: () => changeMonth(monthStart(today())) }, 'This month'));
-    return [nav, quickAdd(), kpis(mtx), el('div', { class: 'mn-grid' }, spending(mtx), el('div', { class: 'mn-col' }, income(mtx), trend(), isPersonal(M.book) ? plannedCard() : null)), txList(mtx)];
+    return [nav, quickAdd(), kpis(mtx), el('div', { class: 'mn-grid' }, spending(mtx), el('div', { class: 'mn-col' }, income(mtx), trend(), isPersonal(M.book) ? plannedCard() : null)),
+      isPersonal(M.book) ? el('div', { class: 'mn-grid mn-debts' }, debtCard('borrowed'), debtCard('lent')) : null, txList(mtx)];
   }
 
   function catSelect(value, { kind, id, label } = {}) {
@@ -452,6 +460,124 @@
     if (!confirm(`Delete “${p.name}” from your direct debits & bills?`)) return;
     try { await q(sb.from('money_planned').delete().eq('id', p.id)); } catch (e) { return; }
     M.planned = M.planned.filter(x => x !== p); toast('Deleted.'); draw();
+  }
+
+  /* ---------- loans (you owe) and lending (owed to you): records you keep, with repayments ---------- */
+  const DEBT_TEXT = {
+    borrowed: { title: 'Loans', sub: 'Money you owe. A record only, separate from money in and out.', who: 'Who you borrowed from, e.g. Barclays, Dad',
+      left: 'left to pay', log: 'Log a payment', paid: 'paid back', done: 'Paid off', empty: 'Add money you’ve borrowed (a loan, a card, from family) and log what you pay back.' },
+    lent: { title: 'Lending', sub: 'Money owed to you. A record only, separate from money in and out.', who: 'Who you lent to, e.g. Ali',
+      left: 'to come back', log: 'Log money back', paid: 'paid back', done: 'Paid back', empty: 'Add money you’ve lent and log it as it comes back.' }
+  };
+  const paysOf = d => M.debtPays.filter(x => x.debt_id === d.id);
+  const paidOf = d => paysOf(d).reduce((a, x) => a + x.amount_pence, 0);
+  const leftOf = d => Math.max(0, d.amount_pence - paidOf(d));
+  const shortDate = d => fmt(d, { day: 'numeric', month: 'short', year: d.slice(0, 4) !== today().slice(0, 4) ? 'numeric' : undefined });
+  function dueText(d) {
+    if (!d.due_on) return null;
+    const days = Math.round((Date.parse(d.due_on) - Date.parse(today())) / 864e5);
+    if (days < 0) return el('span', { class: 'mn-overdue' }, `⚠ Overdue since ${shortDate(d.due_on)}`);
+    if (days === 0) return el('span', { class: 'mn-soon' }, 'Due today');
+    return el('span', { class: days <= 14 ? 'mn-soon' : '' }, `Due ${shortDate(d.due_on)}` + (days <= 14 ? ` · in ${days} day${days === 1 ? '' : 's'}` : ''));
+  }
+  function debtCard(dir) {
+    const T = DEBT_TEXT[dir], all = M.debts.filter(d => d.direction === dir);
+    const open = all.filter(d => leftOf(d) > 0), closed = all.filter(d => leftOf(d) <= 0);
+    open.sort((a, b) => (a.due_on || '9999') < (b.due_on || '9999') ? -1 : (a.due_on || '9999') > (b.due_on || '9999') ? 1 : (a.started_on < b.started_on ? -1 : 1));
+    const total = open.reduce((a, d) => a + leftOf(d), 0);
+    const row = d => {
+      const paid = paidOf(d), left = leftOf(d), pct = Math.min(100, paid / d.amount_pence * 100);
+      const inp = el('input', { class: 'field mn-dpay', inputmode: 'decimal', placeholder: '£ amount', 'aria-label': `${T.log} for ${d.name}` });
+      const log = async () => {
+        const a = C.parseAmount(inp.value);
+        if (!a || a < 0) { toast('Enter the amount in pounds, e.g. 50.'); inp.focus(); return; }
+        if (a > left && !confirm(`That’s more than what’s left (${gbp(left)}). Log ${gbp(a)} anyway?`)) return;
+        let row; try { row = await q(sb.from('money_debt_payments').insert({ user_id: DS.uid(), debt_id: d.id, paid_on: today(), amount_pence: a }).select().single()); } catch (e) { return; }
+        M.debtPays.push(row);
+        toast(leftOf(d) ? `${gbp(a)} logged. ${gbp(leftOf(d))} ${T.left}.` : `${d.name}: all ${dir === 'borrowed' ? 'paid off' : 'paid back'}. Nice.`);
+        draw();
+      };
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); log(); } });
+      return el('div', { class: 'mn-drow' + (left ? '' : ' done') },
+        el('div', { class: 'mn-dtop' },
+          el('button', { type: 'button', class: 'mn-pn', title: 'Edit and see payments', onclick: () => debtDialog(d) }, el('b', {}, d.name), d.note ? el('small', {}, d.note) : null),
+          el('span', { class: 'mn-dleft' }, left ? [amt(left), el('small', {}, T.left)] : el('span', { class: 'mn-donetag' }, '✓ ' + T.done))),
+        el('span', { class: 'mn-bar', 'aria-hidden': 'true' }, el('i', { style: `width:${pct.toFixed(1)}%` })),
+        el('div', { class: 'mn-dmeta' },
+          el('span', {}, amt(paid), ` ${T.paid} of `, amt(d.amount_pence), ` · since ${shortDate(d.started_on)}`),
+          left ? dueText(d) : null),
+        left ? el('div', { class: 'mn-dlog' }, inp, el('button', { type: 'button', class: 'btn', onclick: log }, T.log)) : null);
+    };
+    const name = el('input', { class: 'field', id: `mn-d${dir}-name`, maxlength: '80', placeholder: T.who, 'aria-label': 'Who' });
+    const amount = el('input', { class: 'field', id: `mn-d${dir}-amt`, inputmode: 'decimal', placeholder: '£ amount', 'aria-label': 'Amount in pounds' });
+    const started = el('input', { class: 'field', type: 'date', value: today(), 'aria-label': dir === 'borrowed' ? 'Date borrowed' : 'Date lent', title: dir === 'borrowed' ? 'Date borrowed' : 'Date lent' });
+    const due = el('input', { class: 'field', type: 'date', 'aria-label': 'Due date (optional)', title: 'Due date (optional)' });
+    const note = el('input', { class: 'field', maxlength: '300', placeholder: 'Note (optional)', 'aria-label': 'Note' });
+    const add = async e => {
+      e.preventDefault();
+      const n = name.value.trim(), a = C.parseAmount(amount.value);
+      if (!n) { name.focus(); return; }
+      if (!a || a < 0) { toast('Enter the amount in pounds, e.g. 2,000.'); amount.focus(); return; }
+      let row;
+      try { row = await q(sb.from('money_debts').insert({ user_id: DS.uid(), book_id: M.book, direction: dir, name: n, amount_pence: a, started_on: started.value || today(), due_on: due.value || null, note: note.value.trim() || null }).select().single()); } catch (er) { return; }
+      M.debts.push(row); toast(`Added ${n}.`); draw(`mn-d${dir}-name`);
+    };
+    return el('section', { class: 'mn-card mn-debt mn-debt-' + dir },
+      el('div', { class: 'mn-ch' }, el('h3', {}, T.title),
+        open.length ? el('span', { class: 'mn-psum' }, amt(total), ' ' + T.left) : null),
+      el('p', { class: 'mn-pnote' }, T.sub),
+      open.length ? el('div', { class: 'mn-dlist' }, open.map(row)) : el('p', { class: 'mn-empty' }, closed.length ? `Nothing ${dir === 'borrowed' ? 'owed' : 'owed to you'} right now.` : T.empty),
+      closed.length ? el('details', { class: 'mn-table mn-dclosed' }, el('summary', {}, `${T.done} (${closed.length})`), el('div', { class: 'mn-dlist' }, closed.map(row))) : null,
+      el('form', { class: 'mn-dadd', onsubmit: add }, name, amount,
+        el('label', { class: 'mn-dl' }, el('span', {}, dir === 'borrowed' ? 'Borrowed on' : 'Lent on'), started),
+        el('label', { class: 'mn-dl' }, el('span', {}, 'Due (optional)'), due),
+        note, el('button', { type: 'submit', class: 'btn primary' }, icon('plus', 14), ' Add')));
+  }
+  function debtDialog(d) {
+    const T = DEBT_TEXT[d.direction];
+    const name = el('input', { class: 'field', maxlength: '80', value: d.name, 'aria-label': 'Who' });
+    const amount = el('input', { class: 'field', inputmode: 'decimal', value: (d.amount_pence / 100).toFixed(2), 'aria-label': 'Amount in pounds' });
+    const started = el('input', { class: 'field', type: 'date', value: d.started_on, 'aria-label': 'Started' });
+    const due = el('input', { class: 'field', type: 'date', value: d.due_on || '', 'aria-label': 'Due date (optional)' });
+    const note = el('textarea', { class: 'field', rows: '2', maxlength: '300', value: d.note || '', placeholder: 'A note (optional)', 'aria-label': 'Note' });
+    const pays = el('div', { class: 'mn-dpays' });
+    const paintPays = () => {
+      const list = paysOf(d).slice().reverse();
+      pays.replaceChildren(el('h3', {}, `Payments (${list.length})`),
+        list.length ? el('table', {}, el('tbody', {}, list.map(x => el('tr', {},
+          el('td', {}, shortDate(x.paid_on)), el('td', { class: 'num' }, amt(x.amount_pence)),
+          el('td', {}, el('button', { type: 'button', class: 'mn-del', 'aria-label': `Delete payment of ${gbp(x.amount_pence)} on ${shortDate(x.paid_on)}`, onclick: async () => {
+            if (!confirm(`Delete the ${gbp(x.amount_pence)} payment from ${shortDate(x.paid_on)}?`)) return;
+            try { await q(sb.from('money_debt_payments').delete().eq('id', x.id)); } catch (e) { return; }
+            M.debtPays = M.debtPays.filter(y => y !== x); paintPays(); draw();
+          } }, icon('trash', 14))))))) : el('p', { class: 'meta' }, 'None logged yet.'));
+    };
+    paintPays();
+    const form = el('form', { class: 'mn-form', onsubmit: async e => {
+      e.preventDefault();
+      const a = C.parseAmount(amount.value);
+      if (!name.value.trim()) { name.focus(); return; }
+      if (!a || a < 0) { toast('Enter the amount in pounds.'); amount.focus(); return; }
+      const row = { name: name.value.trim(), amount_pence: a, started_on: started.value || d.started_on, due_on: due.value || null, note: note.value.trim() || null };
+      try { await q(sb.from('money_debts').update(row).eq('id', d.id)); } catch (er) { return; }
+      Object.assign(d, row); dlg.close(); toast('Saved.'); draw();
+    } },
+      el('label', { class: 'pj-lbl' }, el('span', { class: 'lbl' }, d.direction === 'borrowed' ? 'Borrowed from' : 'Lent to'), name),
+      el('div', { class: 'mn-two' }, el('label', { class: 'pj-lbl' }, el('span', { class: 'lbl' }, 'Full amount (£)'), amount),
+        el('label', { class: 'pj-lbl' }, el('span', { class: 'lbl' }, d.direction === 'borrowed' ? 'Borrowed on' : 'Lent on'), started)),
+      el('label', { class: 'pj-lbl' }, el('span', { class: 'lbl' }, 'Due date (optional)'), due),
+      el('label', { class: 'pj-lbl' }, el('span', { class: 'lbl' }, 'Note'), note),
+      pays,
+      el('div', { class: 'actions' }, el('button', { class: 'btn primary', type: 'submit' }, 'Save'),
+        el('button', { class: 'btn', type: 'button', onclick: () => dlg.close() }, 'Cancel'),
+        el('button', { class: 'btn danger mn-right', type: 'button', onclick: async () => { if (await removeDebt(d)) dlg.close(); } }, 'Delete')));
+    const dlg = dialog(`${T.title}: ${d.name}`, form);
+  }
+  async function removeDebt(d) {
+    if (!confirm(`Delete “${d.name}” and its payments?`)) return false;
+    try { await q(sb.from('money_debts').delete().eq('id', d.id)); } catch (e) { return false; }
+    M.debts = M.debts.filter(x => x !== d); M.debtPays = M.debtPays.filter(x => x.debt_id !== d.id);
+    toast('Deleted.'); draw(); return true;
   }
 
   /* ---------- dialogs ---------- */
