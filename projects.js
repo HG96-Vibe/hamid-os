@@ -85,8 +85,8 @@
   async function fetchAll() {
     const t0 = today(), ws = weekStart(t0), ms = monthStart(t0), since = addDays(t0, -60);
     const [month, week, day, recent, focus] = await Promise.all([
-      q(sb.from('tasks').select('id,title,status,project_id,progress,parent_id,period_start').eq('horizon', 'month').eq('period_start', ms).neq('status', 'carried').order('position')),
-      q(sb.from('tasks').select('id,title,status,project_id,parent_id,period_start').eq('horizon', 'week').eq('period_start', ws).neq('status', 'carried').order('position')),
+      q(sb.from('tasks').select('id,title,status,project_id,progress,parent_id,period_start,scheduled_on').eq('horizon', 'month').eq('period_start', ms).neq('status', 'carried').order('position')),
+      q(sb.from('tasks').select('id,title,status,project_id,parent_id,period_start,scheduled_on').eq('horizon', 'week').eq('period_start', ws).neq('status', 'carried').order('position')),
       q(sb.from('tasks').select('id,title,status,project_id,parent_id,period_start').eq('horizon', 'day').eq('period_start', t0).neq('status', 'carried').order('position')),
       q(sb.from('tasks').select('id,title,status,horizon,project_id,period_start,created_at,completed_at').not('project_id', 'is', null).gte('period_start', since).order('period_start', { ascending: false })),
       q(sb.from('focus_sessions').select('minutes,started_at,tasks(project_id)').gte('started_at', new Date(weekStart(t0) + 'T00:00:00').toISOString()))
@@ -119,7 +119,8 @@
   const itemList = (items, empty, max = 4, h) => items.length
     ? el('ul', { class: 'pj-items' }, items.slice(0, max).map(t => el('li', { class: 's-' + t.status, 'data-id': h ? t.id : null, 'data-h': h || null },
         el('span', { class: 'pj-tick', 'aria-hidden': 'true' }, t.status === 'done' ? '✓' : ''),
-        el('button', { class: 'pj-it', onclick: e => { e.stopPropagation(); DS.openItem(t.id); } }, t.title))),
+        el('button', { class: 'pj-it', onclick: e => { e.stopPropagation(); DS.openItem(t.id); } }, t.title),
+        h && h !== 'day' && DS.sched && t.status !== 'dropped' ? DS.sched.button(t) : null)),
         items.length > max ? el('li', { class: 'pj-more' }, `+${items.length - max} more`) : null)
     : el('p', { class: 'pj-none' }, empty);
 
@@ -323,7 +324,7 @@
   let drag = null, swallowClick = false;
   const zoomOf = elm => (elm.offsetWidth ? elm.getBoundingClientRect().width / elm.offsetWidth : 1) || 1;
   document.addEventListener('pointerdown', e => {
-    const li = e.button === 0 && e.pointerType !== 'touch' && e.target.closest && e.target.closest('.pj-dnd li[data-id]');
+    const li = e.button === 0 && e.pointerType !== 'touch' && e.target.closest && !e.target.closest('.sch-wrap') && e.target.closest('.pj-dnd li[data-id]');
     if (!li) return;
     drag = { li, x0: e.clientX, y0: e.clientY, live: false };
   });
@@ -384,7 +385,9 @@
   async function moveTask(id, from, h) {
     const t0 = today(), period = h === 'day' ? t0 : h === 'week' ? weekStart(t0) : monthStart(t0);
     try {
-      await q(sb.from('tasks').update({ horizon: h, period_start: period, parent_id: null, pinned: false, position: Date.now() / 1000 }).eq('id', id));
+      const row = { horizon: h, period_start: period, parent_id: null, pinned: false, position: Date.now() / 1000 };
+      if (h === 'day') row.scheduled_on = null; // a task for today needs no separate day
+      await q(sb.from('tasks').update(row).eq('id', id));
       await q(sb.from('tasks').update({ parent_id: null }).eq('parent_id', id)); // links to it no longer fit
     } catch (e) { return false; }
     // keep the page's numbers right without redrawing it

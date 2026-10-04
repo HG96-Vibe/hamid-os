@@ -70,7 +70,8 @@
           el('div', { class: 'obar', role: 'img', 'aria-label': `${fill}% progress` }, el('i', { style: `width:${fill}%` })),
           el('span', { class: 'oprog' }, labelOf(t, s)),
           DS.proj ? DS.proj.chip(t) : (t.context ? el('span', { class: 'otag' }, t.context) : null)),
-        links || logs ? el('div', { class: 'ometa' }, links ? `\ud83d\udd17 ${links}` : null, links && logs ? ' \u00b7 ' : null, logs ? `${logs} update${logs === 1 ? '' : 's'}` : null) : null));
+        links || logs ? el('div', { class: 'ometa' }, links ? `\ud83d\udd17 ${links}` : null, links && logs ? ' \u00b7 ' : null, logs ? `${logs} update${logs === 1 ? '' : 's'}` : null) : null,
+        DS.sched && t.status !== 'dropped' ? el('div', { class: 'osched' }, DS.sched.button(t)) : null));
     });
 
     if (active.length < MAX) {
@@ -269,7 +270,11 @@
           el('label', { class: 'op-label' }, 'Done looks like', doneDef),
           el('div', { class: 'op-two' },
             el('label', { class: 'op-label' }, 'Project', ctx),
-            el('label', { class: 'op-label' }, 'Reminder', remind))),
+            el('label', { class: 'op-label' }, 'Reminder', remind)),
+          D ? null : el('label', { class: 'op-label' }, 'Scheduled for',
+            el('input', { class: 'op-field', type: 'date', value: t.scheduled_on || '', 'aria-label': 'Scheduled for (a day to do it on)',
+              onchange: keep(e => save({ scheduled_on: e.target.value || null })) }),
+            el('small', { class: 'op-muted' }, 'It shows on that day in the Week tab and at the top of Today.'))),
         D ? null : el('section', { class: 'op-sec' }, el('h4', {}, L.kids, weeks.length ? el('span', { class: 'op-cnt' }, `${s.done}/${s.total}`) : null),
           weeks.length ? el('ul', { class: 'op-weeks' }, weeks.map(w => el('li', { class: w.status === 'done' ? 'done' : '' },
             el('span', { class: 'op-tick' }, w.status === 'done' ? '\u2713' : ''), el('span', { class: 'op-wt' }, w.title),

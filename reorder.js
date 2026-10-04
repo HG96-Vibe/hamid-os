@@ -10,7 +10,7 @@
   if (!DS) return;
   const { sb, q, toast } = DS;
   const ITEM = '.td-list > .td-row[data-oid], .outcomes > .wk-card[data-oid]';
-  const NOT_HANDLE = 'button.ocheck, .hm-star, input, select, textarea, a, .ls-mw';
+  const NOT_HANDLE = 'button.ocheck, .hm-star, input, select, textarea, a, .ls-mw, .sch-wrap';
   const calm = () => window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   const pad2 = n => String(n).padStart(2, '0');
 

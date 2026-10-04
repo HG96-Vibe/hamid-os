@@ -84,3 +84,42 @@
 .ro-ghost{position:fixed!important;left:0!important;top:0!important;margin:0!important;z-index:1000;pointer-events:none;will-change:transform;
   box-shadow:0 22px 46px rgba(8,5,30,.45),0 0 0 2px #fbbf24!important;transition:none!important}
 body.ro-dragging,body.ro-dragging *{cursor:grabbing!important;user-select:none!important;-webkit-user-select:none!important}
+
+/* ---------- scheduling (schedule.js): the date button, Today's "Scheduled for today", and the Week tab's days ---------- */
+.sch-wrap{position:relative;display:inline-flex;flex:none}
+.sch-input{position:absolute;left:0;bottom:0;width:1px;height:1px;opacity:0;pointer-events:none;border:0;padding:0;margin:0}
+.sch-btn{display:inline-flex;align-items:center;gap:5px;border:1px dashed #c3c6e4;background:transparent;color:#5b5f8f;border-radius:999px;padding:2px 9px 2px 7px;font:600 12px/1.45 var(--ui);cursor:pointer;white-space:nowrap}
+.sch-btn:hover{border-color:#d97706;color:#b45309}
+.sch-btn:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+.sch-btn.set{border-style:solid;border-color:rgba(79,70,229,.28);background:#eef0ff;color:#3730a3}
+.sch-btn.late{border-color:#fdba74;background:#fff7ed;color:#c2410c}
+.sch-ic{display:inline-grid}
+.osched{margin-top:10px;display:flex}
+/* on green (finished) cards and rows */
+:is(.outcome.s-done,.pj-items li.s-done) .sch-btn{border-color:rgba(255,255,255,.45);background:rgba(255,255,255,.12);color:#fff}
+/* project page lists: the button sits at the end of the row; "Schedule" only shows when you point at the row */
+.pj-items li .sch-wrap{margin-left:auto;padding-left:8px}
+.pj-items li .sch-btn:not(.set){opacity:0;transition:opacity .12s ease}
+.pj-items li:hover .sch-btn,.pj-items li .sch-btn:focus-visible{opacity:1}
+@media (hover:none){.pj-items li .sch-btn:not(.set){opacity:.6}}
+
+/* Today: what's scheduled for this day, above the list */
+.sch-today{margin:0 0 14px;padding:12px 14px 14px;border-radius:16px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.35)}
+.sch-today h3{margin:0 0 8px;font:700 11.5px/1.2 var(--ui);letter-spacing:.1em;text-transform:uppercase;color:var(--amber)}
+.sch-today ul{list-style:none;margin:0;padding:0;display:grid;gap:7px}
+.sch-today li{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#fbfbf8;color:#1e1b4b;border-radius:12px;padding:9px 12px;box-shadow:0 8px 20px rgba(8,5,30,.22)}
+.sch-check{flex:none;width:22px;height:22px;border-radius:50%;border:2px solid #818cf8;background:#fff;color:#fff;font:800 12px/1 var(--ui);display:grid;place-items:center;cursor:pointer;padding:0}
+.sch-check:hover{border-color:#4338ca}
+.sch-title{border:0;background:none;padding:0;text-align:left;font:700 15px/1.3 var(--ui);color:inherit;cursor:pointer;flex:1 1 200px;min-width:0;overflow-wrap:anywhere}
+.sch-kind{font:600 11.5px/1 var(--ui);padding:4px 8px;border-radius:999px;background:#f2f3f8;color:#5b5f8f}
+.sch-kind.late{background:#fff7ed;color:#c2410c}
+.sch-today li.done{background:linear-gradient(135deg,#10b981,#059669);color:#fff}
+.sch-today li.done .sch-check{border-color:#fff;background:transparent}
+.sch-today li.done .sch-kind{background:rgba(255,255,255,.2);color:#fff}
+html.light .sch-today{background:#fffaf0}
+html.light .sch-today h3{color:#b45309}
+
+/* Week tab: scheduled items inside each day */
+.sch-day{display:grid;gap:3px;min-width:0}
+.sch-it{display:block;font:600 11.5px/1.3 var(--ui);color:#3730a3;background:#eef0ff;border-radius:6px;padding:3px 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sch-it.done{background:#d1fae5;color:#065f46}
