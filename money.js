@@ -34,6 +34,7 @@
   const monthName = ms => fmt(ms, { month: 'long', year: 'numeric' });
   const book = () => M.books.find(b => b.id === M.book);
   const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  const isPersonal = id => { const b = M.books.find(x => x.id === id); return !!b && b.kind === 'personal'; };
   const isBiz = () => !!book() && book().kind !== 'personal';
 
   /* =====================================================================
@@ -54,8 +55,11 @@
       q(sb.from('money_tx').select('*').eq('book_id', id).gte('occurred_on', from).lte('occurred_on', to)
         .order('occurred_on', { ascending: false }).order('created_at', { ascending: false }).limit(10000))]);
     if (!cats.length) cats = await seedCats(id);
+    // your own list of direct debits and bills (Personal); a record only, never counted in money in / out
+    let planned = [];
+    if (isPersonal(id)) { try { planned = await q(sb.from('money_planned').select('*').eq('book_id', id).order('next_on')); } catch (e) {} }
     if (M.book !== id) return;
-    Object.assign(M, { cats, rules, tx });
+    Object.assign(M, { cats, rules, tx, planned });
   }
   // a new book starts with sensible categories (yours to rename, budget or delete)
   async function seedCats(id) {
@@ -145,7 +149,7 @@
       el('h2', {}, monthName(M.month)),
       el('button', { type: 'button', class: 'arrow', 'aria-label': 'Next month', onclick: () => changeMonth(addMonths(M.month, 1)) }, '›'),
       isNow ? null : el('button', { type: 'button', class: 'pill', onclick: () => changeMonth(monthStart(today())) }, 'This month'));
-    return [nav, quickAdd(), kpis(mtx), el('div', { class: 'mn-grid' }, spending(mtx), el('div', { class: 'mn-col' }, income(mtx), trend())), txList(mtx)];
+    return [nav, quickAdd(), kpis(mtx), el('div', { class: 'mn-grid' }, spending(mtx), el('div', { class: 'mn-col' }, income(mtx), trend(), isPersonal(M.book) ? plannedCard() : null)), txList(mtx)];
   }
 
   function catSelect(value, { kind, id, label } = {}) {
@@ -354,6 +358,100 @@
     if (!confirm(`Delete “${t.description}” (${gbp(t.amount_pence, { plus: true })})?`)) return;
     try { await q(sb.from('money_tx').delete().eq('id', t.id)); } catch (e) { return; }
     M.tx = M.tx.filter(x => x !== t); toast('Deleted.'); draw();
+  }
+
+  /* ---------- direct debits & bills: a list you keep, separate from money in and out ---------- */
+  const CADENCE = { weekly: 'Weekly', monthly: 'Monthly', quarterly: 'Every 3 months', yearly: 'Yearly', once: 'One-off' };
+  const PER_MONTH = { weekly: 52 / 12, monthly: 1, quarterly: 1 / 3, yearly: 1 / 12, once: 0 };
+  // the same day n months on (31 Jan + 1 month = 28/29 Feb)
+  function plusMonths(d, n) {
+    const y = +d.slice(0, 4), m = +d.slice(5, 7) - 1 + n, day = +d.slice(8, 10);
+    const yy = y + Math.floor(m / 12), mm = ((m % 12) + 12) % 12, last = new Date(yy, mm + 1, 0).getDate();
+    return `${yy}-${String(mm + 1).padStart(2, '0')}-${String(Math.min(day, last)).padStart(2, '0')}`;
+  }
+  const nth = (p, k) => p.cadence === 'weekly' ? addDays(p.next_on, 7 * k) : plusMonths(p.next_on, k * ({ monthly: 1, quarterly: 3, yearly: 12 }[p.cadence] || 0));
+  // the next time it goes out, from today (a one-off keeps its date)
+  function nextDue(p) {
+    if (p.cadence === 'once') return p.next_on;
+    const t0 = today(); let k = 0;
+    while (nth(p, k) < t0 && k < 2000) k++;
+    return nth(p, k);
+  }
+  // how much of it still goes out between today and the end of this month
+  function leftThisMonth(p) {
+    const t0 = today(), end = monthEnd(monthStart(t0)); let n = 0;
+    if (p.cadence === 'once') return p.next_on >= t0 && p.next_on <= end ? p.amount_pence : 0;
+    for (let k = 0, d = nth(p, 0); d <= end && k < 2000; d = nth(p, ++k)) if (d >= t0) n += p.amount_pence;
+    return n;
+  }
+  function dueLabel(d) {
+    const t0 = today(), days = Math.round((Date.parse(d) - Date.parse(t0)) / 864e5);
+    if (days < 0) return 'Went out ' + fmt(d, { day: 'numeric', month: 'short' });
+    if (days === 0) return 'Today';
+    if (days === 1) return 'Tomorrow';
+    return fmt(d, { weekday: 'short', day: 'numeric', month: 'short' }) + (days <= 14 ? ` · in ${days} days` : '');
+  }
+  function plannedCard() {
+    const list = (M.planned || []).map(p => ({ p, due: nextDue(p) }))
+      .sort((a, b) => ((a.due < today()) - (b.due < today())) || (a.due < b.due ? -1 : a.due > b.due ? 1 : 0));
+    const monthly = M.planned.reduce((a, p) => a + p.amount_pence * PER_MONTH[p.cadence], 0);
+    const left = M.planned.reduce((a, p) => a + leftThisMonth(p), 0);
+    const name = el('input', { class: 'field', id: 'mn-pname', maxlength: '80', placeholder: 'e.g. Council tax, Gym, Phone', 'aria-label': 'Name' });
+    const amount = el('input', { class: 'field', id: 'mn-pamt', inputmode: 'decimal', placeholder: '£ amount', 'aria-label': 'Amount in pounds' });
+    const cad = el('select', { class: 'field', id: 'mn-pcad', 'aria-label': 'How often' }, Object.entries(CADENCE).map(([k, v]) => el('option', { value: k }, v)));
+    cad.value = 'monthly';
+    const date = el('input', { class: 'field', id: 'mn-pdate', type: 'date', value: today(), 'aria-label': 'Date it goes out' });
+    const note = el('input', { class: 'field', id: 'mn-pnote', maxlength: '300', placeholder: 'Note (optional)', 'aria-label': 'Note' });
+    const add = async e => {
+      e.preventDefault();
+      const n = name.value.trim(), a = C.parseAmount(amount.value);
+      if (!n) { name.focus(); return; }
+      if (!a) { toast('Enter the amount in pounds, e.g. 45.99.'); amount.focus(); return; }
+      let row;
+      try { row = await q(sb.from('money_planned').insert({ user_id: DS.uid(), book_id: M.book, name: n, amount_pence: Math.abs(a), cadence: cad.value, next_on: date.value || today(), note: note.value.trim() || null }).select().single()); } catch (er) { return; }
+      M.planned.push(row); toast(`Added ${n}.`); draw('mn-pname');
+    };
+    return el('section', { class: 'mn-card mn-planned' },
+      el('div', { class: 'mn-ch' }, el('h3', {}, 'Direct debits & bills'),
+        M.planned.length ? el('span', { class: 'mn-psum' }, amt(Math.round(monthly), { whole: true }), ' a month') : null),
+      el('p', { class: 'mn-pnote' }, 'Your own record of what’s going out. It doesn’t count towards money in or out.'),
+      M.planned.length ? el('p', { class: 'mn-total' }, left ? [amt(left), ' still to go out this month'] : 'Nothing more to go out this month.') : null,
+      list.length ? el('div', { class: 'mn-plist' }, list.map(({ p, due }) => el('div', { class: 'mn-prow' + (due < today() ? ' past' : '') },
+        el('button', { type: 'button', class: 'mn-pn', title: 'Edit', onclick: () => plannedDialog(p) }, el('b', {}, p.name), p.note ? el('small', {}, p.note) : null),
+        el('span', { class: 'mn-pwhen' }, el('span', { class: 'mn-kind' }, CADENCE[p.cadence]), el('small', {}, dueLabel(due))),
+        amt(p.amount_pence, {}, 'mn-pamt'),
+        el('button', { type: 'button', class: 'mn-del', title: 'Delete', 'aria-label': `Delete ${p.name}`, onclick: () => removePlanned(p) }, icon('trash', 15))))) :
+        el('p', { class: 'mn-empty' }, 'Note down your direct debits, standing orders and bills, with how much and when they go out.'),
+      el('form', { class: 'mn-padd', onsubmit: add }, name, amount, cad, date, note, el('button', { type: 'submit', class: 'btn primary' }, icon('plus', 14), ' Add')));
+  }
+  function plannedDialog(p) {
+    const name = el('input', { class: 'field', maxlength: '80', value: p.name, 'aria-label': 'Name' });
+    const amount = el('input', { class: 'field', inputmode: 'decimal', value: (p.amount_pence / 100).toFixed(2), 'aria-label': 'Amount in pounds' });
+    const cad = el('select', { class: 'field', 'aria-label': 'How often' }, Object.entries(CADENCE).map(([k, v]) => el('option', { value: k }, v))); cad.value = p.cadence;
+    const date = el('input', { class: 'field', type: 'date', value: nextDue(p), 'aria-label': 'Next date it goes out' });
+    const note = el('textarea', { class: 'field', rows: '2', maxlength: '300', value: p.note || '', placeholder: 'A note (optional)', 'aria-label': 'Note' });
+    const form = el('form', { class: 'mn-form', onsubmit: async e => {
+      e.preventDefault();
+      const a = C.parseAmount(amount.value);
+      if (!name.value.trim()) { name.focus(); return; }
+      if (!a) { toast('Enter the amount in pounds, e.g. 45.99.'); amount.focus(); return; }
+      const row = { name: name.value.trim(), amount_pence: Math.abs(a), cadence: cad.value, next_on: date.value || p.next_on, note: note.value.trim() || null };
+      try { await q(sb.from('money_planned').update(row).eq('id', p.id)); } catch (er) { return; }
+      Object.assign(p, row); dlg.close(); toast('Saved.'); draw();
+    } },
+      el('label', { class: 'pj-lbl' }, el('span', { class: 'lbl' }, 'Name'), name),
+      el('div', { class: 'mn-two' }, el('label', { class: 'pj-lbl' }, el('span', { class: 'lbl' }, 'Amount (£)'), amount), el('label', { class: 'pj-lbl' }, el('span', { class: 'lbl' }, 'How often'), cad)),
+      el('label', { class: 'pj-lbl' }, el('span', { class: 'lbl' }, 'Next date it goes out'), date),
+      el('label', { class: 'pj-lbl' }, el('span', { class: 'lbl' }, 'Note'), note),
+      el('div', { class: 'actions' }, el('button', { class: 'btn primary', type: 'submit' }, 'Save'),
+        el('button', { class: 'btn', type: 'button', onclick: () => dlg.close() }, 'Cancel'),
+        el('button', { class: 'btn danger mn-right', type: 'button', onclick: async () => { dlg.close(); await removePlanned(p); } }, 'Delete')));
+    const dlg = dialog('Edit ' + p.name, form);
+  }
+  async function removePlanned(p) {
+    if (!confirm(`Delete “${p.name}” from your direct debits & bills?`)) return;
+    try { await q(sb.from('money_planned').delete().eq('id', p.id)); } catch (e) { return; }
+    M.planned = M.planned.filter(x => x !== p); toast('Deleted.'); draw();
   }
 
   /* ---------- dialogs ---------- */
