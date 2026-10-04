@@ -67,6 +67,7 @@ features can be added without editing the core file. If `window.DS` is missing, 
 | `hero-storm.webp` | Hero image used by the side panel (`panel.css`). |
 | `vercel.json` | Vercel headers (see above). |
 | `supabase/functions/reminders/index.ts` | Source of the `reminders` Edge Function. |
+| `supabase/functions/capital-report/` | Source of the `capital-report` Edge Function: emails the Capital report (every book, month so far) on the 30th of each month at 6pm (the last day in February), and on demand from Capital → Export report. `report.js` is a copy of the app's `money-report.js`, so the email and the export match: copy it again whenever `money-report.js` changes. |
 | `supabase/functions/tts/index.ts` | Source of the `tts` Edge Function: turns text into speech with Microsoft Azure (free F0 plan) for Voice. Owner with 2FA only; keeps what it has made in the private `voice-cache` bucket so the same words are never paid for twice. |
 | `supabase/schema.sql` | The database's public schema as first imported: tables, RLS policies, functions, the sign-up trigger and the cron job. |
 | `tools/create-bundle/` | Source and pinned versions for `create-editor.js` and `create-docx.js`. Run `tools/create-bundle/build.sh` (needs Node) to rebuild them. Not deployed: `.vercelignore` keeps `tools/` off the site. |
@@ -129,7 +130,7 @@ and the VAPID **public** key. They are safe in the browser because RLS protects 
 - Database: run `supabase/schema.sql` against a fresh Supabase project, then add the `ds_secrets` rows
   (`vapid_public`, `vapid_private`, `cron_secret`) by hand.
 - Edge Functions: `npx supabase functions deploy reminders --no-verify-jwt --project-ref <ref>` (and the same for
-  `tts`), then set `RESEND_API_KEY`, `AZURE_SPEECH_KEY` and `AZURE_SPEECH_REGION` with `npx supabase secrets set`.
+  `tts` and `capital-report`; the hourly `capital-report` cron job is in `supabase/migrations/20261013_capital_report.sql`), then set `RESEND_API_KEY`, `AZURE_SPEECH_KEY` and `AZURE_SPEECH_REGION` with `npx supabase secrets set`.
 
 ## How this repo was made
 
