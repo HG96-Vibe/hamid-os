@@ -103,3 +103,16 @@ body.pj-is-dragging,body.pj-is-dragging *{cursor:grabbing!important;user-select:
 .pj-brief-dlg .actions{display:flex;align-items:center;justify-content:flex-end;gap:12px}
 .pj-brief-dlg .pj-brief-status{color:var(--muted);margin-right:auto;margin-left:0}
 html.light .pj-brief{box-shadow:var(--shadow);border:1px solid rgba(30,27,75,.06)}
+
+/* ---------- each company's header is a strip in its own colour (text white or dark, whichever reads better) ---------- */
+.pj-ghead{--pj-ink:#fff;padding:11px 12px 11px 16px;border-radius:16px;color:var(--pj-ink);
+  background:linear-gradient(100deg,var(--pj) 0%,color-mix(in srgb,var(--pj) 84%,var(--pj-to,#000)) 100%);
+  box-shadow:0 12px 28px color-mix(in srgb,var(--pj) 30%,rgba(8,5,30,.35)),inset 0 1px 0 rgba(255,255,255,.18)}
+.pj-ghead h2,html.light .pj-ghead h2{color:var(--pj-ink)!important}
+.pj-ghead .pj-kind,html.light .pj-ghead .pj-kind{color:var(--pj-ink);opacity:.78}
+.pj-ghead .pj-dot{background:var(--pj-ink);box-shadow:0 0 0 3px color-mix(in srgb,var(--pj-ink) 28%,transparent)}
+.pj-ghead .linkish,html.light .pj-ghead .linkish{color:var(--pj-ink);opacity:.9}
+.pj-ghead .linkish:hover{opacity:1}
+.pj-ghead .pj-add,html.light .pj-ghead .pj-add{background:color-mix(in srgb,var(--pj-ink) 16%,transparent)!important;border-color:color-mix(in srgb,var(--pj-ink) 45%,transparent)!important;color:var(--pj-ink)!important;box-shadow:none}
+.pj-ghead .pj-add:hover,html.light .pj-ghead .pj-add:hover{background:color-mix(in srgb,var(--pj-ink) 26%,transparent)!important}
+.pj-ghead :focus-visible{outline:2px solid var(--pj-ink);outline-offset:2px}
