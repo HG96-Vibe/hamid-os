@@ -232,6 +232,31 @@
 .mn-cap.capped::-webkit-scrollbar-thumb:hover{background:#818cf8}
 .mn-cap.capped:focus-visible{outline:3px solid var(--i400);outline-offset:2px}
 
+/* fold-down cards: compact by default, the arrow opens one */
+.mn-ch>h3{flex:0 1 auto}
+.mn-ch>.mn-fold{margin-left:auto;order:99}
+.mn-ch>.mn-psum,.mn-ch>.linkish,.mn-ch>.mn-legend,.mn-ch>.mn-count{margin-left:auto}
+.mn-ch>.mn-psum+.mn-fold,.mn-ch>.linkish+.mn-fold,.mn-ch>.mn-legend+.mn-fold,.mn-ch>.mn-search+.mn-fold{margin-left:8px}
+.mn-fold{flex:none;width:32px;height:32px;border-radius:50%;border:1px solid var(--mn-line);background:#fff;color:var(--mn-ink);display:grid;place-items:center;padding:0;cursor:pointer;transition:background .15s,border-color .15s}
+.mn-fold svg{transition:transform .25s ease}
+.mn-fold[aria-expanded="true"] svg{transform:rotate(180deg)}
+.mn-fold:hover{border-color:#a5b4fc;background:#eef2ff}
+.mn-chsum{font-size:13px;color:var(--mn-muted);white-space:nowrap}
+.mn-card:not(.folded) .mn-chsum{display:none}
+.mn-card.folded{padding-top:12px;padding-bottom:12px}
+.mn-card.folded>.mn-ch{margin-bottom:0;cursor:pointer}
+.mn-card.folded>:not(.mn-ch){display:none}
+.mn-card.folded>.mn-ch :is(.mn-search,.mn-fpill,.mn-legend){display:none}
+.mn-card.opening>:not(.mn-ch){animation:mn-open .3s ease}
+@keyframes mn-open{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.mn-card.opening>:not(.mn-ch),.mn-fold svg{animation:none;transition:none}}
+/* To play with: the headline number */
+.mn-kpis:has(.play){grid-template-columns:repeat(5,minmax(0,1fr))}
+.mn-kpi.play{background:linear-gradient(180deg,#fffbeb,#fbfbf8);border-top-color:#d97706;box-shadow:0 14px 34px rgba(8,5,30,.3),inset 0 0 0 2px rgba(217,119,6,.35)}
+.mn-kpi.play>span{color:#b45309}
+.mn-kpi.play.neg{border-top-color:var(--mn-over);box-shadow:0 14px 34px rgba(8,5,30,.3),inset 0 0 0 2px rgba(185,28,28,.35)}
+.mn-kpi.play.neg>span,.mn-kpi.play.neg b{color:var(--mn-over)}
+
 /* dialogs */
 .mn-dlg .seg button{border:0;background:none;padding:7px 16px;font-size:13.5px;font-weight:600;color:var(--muted)}
 .mn-dlg .seg button.on{background:var(--i500);color:#fff}
@@ -292,7 +317,8 @@ html.light .mn-kpi:not(.in):not(.out):not(.pos):not(.neg){border-top-color:#c7d2
 
 /* phone */
 @media (max-width:900px){
-  .mn-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .mn-kpis,.mn-kpis:has(.play){grid-template-columns:repeat(2,minmax(0,1fr))}
+  .mn-kpi.play{grid-column:1/-1}
   .mn-grid{grid-template-columns:1fr}
   .mn-hold{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"n v" "u m"}
   .mn-hn{grid-area:n}.mn-hv{grid-area:v;text-align:right}.mn-hu{grid-area:u}.mn-hm{grid-area:m}

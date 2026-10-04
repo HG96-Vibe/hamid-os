@@ -134,10 +134,44 @@
       for (const sel of ['.mn-ch', '.mn-total']) { const a = keep.querySelector(sel), b = fresh.querySelector(sel); if (a && b) a.replaceWith(b); }
       fresh.replaceWith(keep);
     }
+    foldCards();
     capLists(scrolled);
     if (Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y);
     if (active && active.startsWith('mn-')) { const f = document.getElementById(active); if (f) f.focus({ preventScroll: true }); }
   }
+  // Cards start folded (just their heading and a short summary); the arrow opens one at a time to work in it.
+  // What's open is remembered while the app is open (this browser tab), so redraws don't fold them again.
+  const FOLD = { 'mn-spend': 'spend', 'mn-income': 'income', 'mn-trend': 'trend', 'mn-planned': 'planned', 'mn-debt-borrowed': 'loans',
+    'mn-debt-lent': 'lending', 'mn-list': 'payments', 'mn-worthchart': 'worth', 'mn-holdings': 'holdings' };
+  const opened = new Set((() => { try { return JSON.parse(sessionStorage.getItem('mn_open') || '[]'); } catch (e) { return []; } })());
+  const CHEV = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+  function foldCards() {
+    page.querySelectorAll('.mn-card').forEach(card => {
+      const key = Object.keys(FOLD).find(c => card.classList.contains(c)); if (!key) return;
+      const head = card.querySelector(':scope > .mn-ch'); if (!head) return;
+      const id = FOLD[key], open = opened.has(id), title = (head.querySelector('h3') || {}).textContent || 'this section';
+      card.classList.toggle('folded', !open);
+      if (card.dataset.sum && !head.querySelector('.mn-chsum')) head.querySelector('h3').after(el('span', { class: 'mn-chsum' }, card.dataset.sum));
+      let b = head.querySelector('.mn-fold');
+      if (!b) { b = Object.assign(el('button', { type: 'button', class: 'mn-fold' }), { innerHTML: CHEV }); head.append(b); }
+      b.setAttribute('aria-expanded', String(open)); b.setAttribute('aria-label', (open ? 'Fold away ' : 'Open ') + title); b.title = open ? 'Fold away' : 'Open';
+      b.onclick = e => { e.stopPropagation(); toggleFold(card, id); };
+      head.onclick = e => { if (!e.target.closest('button,a,input,select,textarea,label,summary')) toggleFold(card, id); };
+    });
+  }
+  function toggleFold(card, id) {
+    const open = !opened.has(id);
+    if (open) opened.add(id); else opened.delete(id);
+    try { sessionStorage.setItem('mn_open', JSON.stringify([...opened])); } catch (e) {}
+    card.classList.toggle('folded', !open);
+    const b = card.querySelector(':scope > .mn-ch .mn-fold'), title = (card.querySelector(':scope > .mn-ch h3') || {}).textContent || '';
+    if (b) { b.setAttribute('aria-expanded', String(open)); b.setAttribute('aria-label', (open ? 'Fold away ' : 'Open ') + title); b.title = open ? 'Fold away' : 'Open'; }
+    if (open) {
+      card.classList.add('opening'); setTimeout(() => card.classList.remove('opening'), 320);
+      capLists(); // lists inside can only be measured once they're showing
+    }
+  }
+
   // Long lists show 10 at a time and scroll for the rest, so no card grows without end.
   const CAP = 10;
   function capLists(scrolled) {
@@ -251,7 +285,16 @@
       k('Money in', amt(inn), plural(mtx.filter(t => t.amount_pence > 0).length, 'payment'), 'in'),
       k('Money out', amt(out), plural(mtx.filter(t => t.amount_pence < 0).length, 'payment'), 'out'),
       k(isBiz() ? 'Profit' : 'Left over', amt(net, { plus: true }), net < 0 ? 'more out than in' : 'in minus out', net < 0 ? 'neg' : 'pos'),
-      k(isBiz() ? 'Margin' : 'Saved', rate == null ? '–' : rate + '%', isBiz() ? 'profit as a share of money in' : 'of what came in'));
+      k(isBiz() ? 'Margin' : 'Saved', rate == null ? '–' : rate + '%', isBiz() ? 'profit as a share of money in' : 'of what came in'),
+      playTile(net));
+  }
+  // To play with: money in, minus money out, minus the direct debits still expected this month (not yet ticked
+  // as paid). Personal, this month only.
+  function playTile(net) {
+    if (!isPersonal(M.book) || M.month !== monthStart(today())) return null;
+    const expected = (M.planned || []).reduce((a, p) => a + expectedThisMonth(p), 0), play = net - expected;
+    return el('div', { class: 'mn-kpi play' + (play < 0 ? ' neg' : '') }, el('span', {}, 'To play with'), el('b', {}, amt(play, { plus: play > 0 })),
+      el('small', {}, expected ? ['after ', amt(expected), ' of direct debits still to go'] : 'no direct debits left this month'));
   }
 
   // where it went, against each category's monthly budget
@@ -277,7 +320,8 @@
     const rows = [...budgeted.map(c => row(c.name, spent[c.name] || 0, c.budget_pence, c.name)),
       ...free.sort((a, b) => spent[b.name] - spent[a.name]).map(c => row(c.name, spent[c.name], null, c.name)),
       spent.__none ? row('Uncategorised', spent.__none, null, '__none') : null].filter(Boolean);
-    return el('section', { class: 'mn-card mn-spend' },
+    const spentAll = Object.values(spent).reduce((a, v) => a + v, 0), overN = budgeted.filter(c => (spent[c.name] || 0) > c.budget_pence).length;
+    return el('section', { class: 'mn-card mn-spend', 'data-sum': gbp(spentAll) + ' spent' + (overN ? ` · ${overN} over budget` : '') },
       el('div', { class: 'mn-ch' }, el('h3', {}, 'Where it went'),
         el('button', { type: 'button', class: 'linkish', onclick: catsDialog }, budgeted.length ? 'Edit budgets' : 'Set budgets')),
       budgeted.length ? el('p', { class: 'mn-total' }, amt(totalS), ' spent of ', amt(totalB, { whole: true }), ' budgeted · ',
@@ -290,7 +334,7 @@
     const got = {};
     mtx.filter(t => t.amount_pence > 0).forEach(t => { const k = t.category && kindOf(t.category) === 'in' ? t.category : '__none'; got[k] = (got[k] || 0) + t.amount_pence; });
     const keys = Object.keys(got).sort((a, b) => got[b] - got[a]), max = Math.max(1, ...Object.values(got));
-    return el('section', { class: 'mn-card mn-income' },
+    return el('section', { class: 'mn-card mn-income', 'data-sum': gbp(Object.values(got).reduce((a, v) => a + v, 0)) + ' in' },
       el('div', { class: 'mn-ch' }, el('h3', {}, 'Money in')),
       keys.length ? el('div', { class: 'mn-brows mn-cap', 'data-cap': 'income', 'data-items': '.mn-brow' }, keys.map(k => el('button', { type: 'button', class: 'mn-brow inrow' + (M.filter === k ? ' on' : ''),
         'aria-pressed': String(M.filter === k), title: 'Show these payments', onclick: () => { M.filter = M.filter === k ? null : k; draw(); } },
@@ -346,7 +390,7 @@
     const table = el('details', { class: 'mn-table' }, el('summary', {}, 'Show as a table'),
       el('table', {}, el('thead', {}, el('tr', {}, el('th', {}, 'Month'), el('th', {}, 'Money in'), el('th', {}, 'Money out'))),
         el('tbody', {}, data.map(d => el('tr', {}, el('td', {}, monthName(d.ms)), el('td', {}, amt(d.in)), el('td', {}, amt(d.out)))))));
-    return el('section', { class: 'mn-card mn-trend' },
+    return el('section', { class: 'mn-card mn-trend', 'data-sum': max ? `${gbp(data[5].in)} in · ${gbp(data[5].out)} out this month` : '' },
       el('div', { class: 'mn-ch' }, el('h3', {}, 'Last six months'),
         el('span', { class: 'mn-legend' }, el('i', { class: 'in' }), 'Money in', el('i', { class: 'out' }), 'Money out')),
       max ? fig : el('p', { class: 'mn-empty' }, 'Your chart fills in as you add money in and out.'), max ? table : null);
@@ -440,6 +484,13 @@
     const t0 = today(), end = monthEnd(monthStart(t0)); let n = 0;
     if (p.cadence === 'once') return p.next_on >= t0 && p.next_on <= end && !isPaid(p, p.next_on) ? p.amount_pence : 0;
     for (let k = 0, d = nth(p, 0); d <= end && k < 2000; d = nth(p, ++k)) if (d >= t0 && !isPaid(p, d)) n += p.amount_pence;
+    return n;
+  }
+  // this month's payments of it that haven't been ticked as paid yet (including any whose date has passed)
+  function expectedThisMonth(p) {
+    const ms = monthStart(today()), end = monthEnd(ms); let n = 0;
+    if (p.cadence === 'once') return p.next_on >= ms && p.next_on <= end && !isPaid(p, p.next_on) ? p.amount_pence : 0;
+    for (let k = 0, d = nth(p, 0); d <= end && k < 2000; d = nth(p, ++k)) if (d >= ms && !isPaid(p, d)) n += p.amount_pence;
     return n;
   }
   // tick: it's been paid, so it goes into money out (on the day it was due, or today if paid early); untick takes it out again
@@ -1066,7 +1117,7 @@
           el('button', { type: 'button', class: 'linkish', onclick: () => holdingDialog(h) }, 'Edit'),
           el('button', { type: 'button', class: 'mn-del', title: 'Delete', 'aria-label': `Delete ${h.name}`, onclick: () => removeHolding(h) }, icon('trash', 15))));
     });
-    return el('section', { class: 'mn-card mn-holdings' },
+    return el('section', { class: 'mn-card mn-holdings', 'data-sum': M.holdings.length ? plural(M.holdings.length, 'account') : '' },
       el('div', { class: 'mn-ch' }, el('h3', {}, 'Investments & accounts')),
       rows.length ? el('div', { class: 'mn-holdlist mn-cap', 'data-cap': 'hold', 'data-items': '.mn-hold' }, rows) : el('p', { class: 'mn-empty' }, 'Add what you own: ISAs, pensions, shares, crypto, savings, property. Add debts too (mortgage, loans, cards) and they count against your net worth.'),
       el('form', { class: 'mn-hadd', onsubmit: add }, name, kind, value, el('button', { type: 'submit', class: 'btn primary' }, icon('plus', 14), ' Add')),
