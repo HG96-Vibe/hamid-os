@@ -104,15 +104,30 @@ body.pj-is-dragging,body.pj-is-dragging *{cursor:grabbing!important;user-select:
 .pj-brief-dlg .pj-brief-status{color:var(--muted);margin-right:auto;margin-left:0}
 html.light .pj-brief{box-shadow:var(--shadow);border:1px solid rgba(30,27,75,.06)}
 
-/* ---------- each company's header is a strip in its own colour (text white or dark, whichever reads better) ---------- */
-.pj-ghead{--pj-ink:#fff;padding:11px 12px 11px 16px;border-radius:16px;color:var(--pj-ink);
-  background:linear-gradient(100deg,var(--pj) 0%,color-mix(in srgb,var(--pj) 84%,var(--pj-to,#000)) 100%);
-  box-shadow:0 12px 28px color-mix(in srgb,var(--pj) 30%,rgba(8,5,30,.35)),inset 0 1px 0 rgba(255,255,255,.18)}
-.pj-ghead h2,html.light .pj-ghead h2{color:var(--pj-ink)!important}
-.pj-ghead .pj-kind,html.light .pj-ghead .pj-kind{color:var(--pj-ink);opacity:.78}
-.pj-ghead .pj-dot{background:var(--pj-ink);box-shadow:0 0 0 3px color-mix(in srgb,var(--pj-ink) 28%,transparent)}
-.pj-ghead .linkish,html.light .pj-ghead .linkish{color:var(--pj-ink);opacity:.9}
+/* ---------- each company's header: a slim, premium midnight strip lit by the company's colour ----------
+   Deep navy base, the company colour glowing in from the left, a fine edge that catches the colour and fades,
+   a faint sheen along the top, white text. Reads the same in dark and light mode. */
+.pj-ghead{--deep:#15132f;padding:6px 8px 6px 14px;border-radius:13px;color:#fff;gap:9px;border:1px solid transparent;
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,0) 55%) padding-box,
+    radial-gradient(130% 260% at 0% 50%,color-mix(in srgb,var(--pj) 62%,transparent) 0%,transparent 58%) padding-box,
+    linear-gradient(100deg,color-mix(in srgb,var(--pj) 34%,var(--deep)) 0%,var(--deep) 62%,#100e26 100%) padding-box,
+    linear-gradient(100deg,color-mix(in srgb,var(--pj) 85%,#fff) 0%,color-mix(in srgb,var(--pj) 35%,transparent) 30%,rgba(255,255,255,.07) 65%,rgba(255,255,255,.12) 100%) border-box;
+  box-shadow:0 10px 28px color-mix(in srgb,var(--pj) 16%,rgba(8,5,30,.32)),inset 0 1px 0 rgba(255,255,255,.06)}
+.pj-ghead h2,html.light .pj-ghead h2{color:#fff!important;font-size:19px;letter-spacing:-.015em}
+.pj-ghead .pj-kind,html.light .pj-ghead .pj-kind{color:color-mix(in srgb,var(--pj) 45%,#fff);opacity:1;font-size:10.5px;letter-spacing:.16em}
+.pj-ghead .pj-dot{width:9px;height:9px;background:color-mix(in srgb,var(--pj) 80%,#fff);box-shadow:0 0 0 3px color-mix(in srgb,var(--pj) 28%,transparent),0 0 14px 2px var(--pj)}
+.pj-ghead .linkish,html.light .pj-ghead .linkish{color:#fff;opacity:.72;font-size:13px}
 .pj-ghead .linkish:hover{opacity:1}
-.pj-ghead .pj-add,html.light .pj-ghead .pj-add{background:color-mix(in srgb,var(--pj-ink) 16%,transparent)!important;border-color:color-mix(in srgb,var(--pj-ink) 45%,transparent)!important;color:var(--pj-ink)!important;box-shadow:none}
-.pj-ghead .pj-add:hover,html.light .pj-ghead .pj-add:hover{background:color-mix(in srgb,var(--pj-ink) 26%,transparent)!important}
-.pj-ghead :focus-visible{outline:2px solid var(--pj-ink);outline-offset:2px}
+.pj-ghead .pj-add,html.light .pj-ghead .pj-add{padding:4px 12px;font-size:12.5px;background:rgba(255,255,255,.06)!important;border-color:color-mix(in srgb,var(--pj) 40%,rgba(255,255,255,.25))!important;color:#fff!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+.pj-ghead .pj-add:hover,html.light .pj-ghead .pj-add:hover{background:color-mix(in srgb,var(--pj) 22%,transparent)!important}
+.pj-ghead :focus-visible{outline:2px solid #fff;outline-offset:2px}
+/* the company dot breathes: its glow slowly brightens and dims (still if the Mac is set to reduce motion) */
+.pj-ghead .pj-dot{position:relative}
+.pj-ghead .pj-dot::after{content:"";position:absolute;inset:-7px;border-radius:50%;pointer-events:none;
+  background:radial-gradient(circle,color-mix(in srgb,var(--pj) 85%,#fff) 0%,color-mix(in srgb,var(--pj) 45%,transparent) 38%,transparent 70%);
+  opacity:.35;animation:pj-breathe 4.2s ease-in-out infinite alternate}
+.pj-group:nth-of-type(3n+2) .pj-dot::after{animation-delay:-1.4s}
+.pj-group:nth-of-type(3n) .pj-dot::after{animation-delay:-2.8s}
+@keyframes pj-breathe{from{opacity:.25;transform:scale(.85)}to{opacity:.95;transform:scale(1.15)}}
+@media (prefers-reduced-motion:reduce){.pj-ghead .pj-dot::after{animation:none;opacity:.6}}

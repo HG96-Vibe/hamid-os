@@ -25,14 +25,6 @@
   const kids = rootId => P.list.filter(p => p.parent_id === rootId);
   const rootOf = p => (p && p.parent_id ? byId(p.parent_id) : p);
   const label = id => { const p = byId(id); if (!p) return ''; const r = rootOf(p); return r && r !== p ? `${r.name} › ${p.name}` : p.name; };
-  // white or dark text, whichever reads better on a company's colour strip
-  function inkOn(hex) {
-    const m = /^#?([0-9a-f]{6})$/i.exec(hex || ''); if (!m) return '#fff';
-    const lin = v => { v /= 255; return v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); };
-    const n = parseInt(m[1], 16), L = .2126 * lin(n >> 16) + .7152 * lin((n >> 8) & 255) + .0722 * lin(n & 255);
-    const onWhite = 1.05 / (L + .05), onInk = (L + .05) / (.0144 + .05); // contrast with white, and with #1e1b4b
-    return onInk > onWhite ? '#1e1b4b' : '#fff';
-  }
   const color = id => { const p = byId(id); return (p && (p.color || rootOf(p)?.color)) || '#6366f1'; };
   // Everything that counts as "this project" for a top-level item is just itself; for filters a company also covers its projects.
   const family = id => { const p = byId(id); return p && isRoot(p) ? [p.id, ...kids(p.id).map(k => k.id)] : [id]; };
@@ -169,7 +161,7 @@
       const gen = statsFor([r.id], D);
       const showGeneral = gen.month.length || gen.week.length || gen.day.length || !active.length;
       wrap.append(el('section', { class: 'section pj-group', style: `--pj:${color(r.id)}` },
-        el('div', { class: 'pj-ghead', style: `--pj-ink:${inkOn(color(r.id))};--pj-to:${inkOn(color(r.id)) === '#fff' ? '#000' : '#fff'}` },
+        el('div', { class: 'pj-ghead' },
           el('span', { class: 'pj-dot', 'aria-hidden': 'true' }),
           el('h2', {}, r.name),
           el('span', { class: 'pj-kind' }, r.kind === 'personal' ? 'Personal' : 'Company'),
