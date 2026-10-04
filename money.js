@@ -836,7 +836,12 @@
   /* ---------- dialogs ---------- */
   function dialog(title, body, cls) {
     const dlg = el('dialog', { class: 'mn-dlg ' + (cls || ''), 'aria-label': title });
-    dlg.append(el('div', { class: 'dlg' }, el('h2', {}, title), body));
+    // a ✕ in the corner, and a click on the dimmed background outside it, close it (as well as Escape)
+    const x = el('button', { type: 'button', class: 'mn-x', 'aria-label': 'Close', title: 'Close', onclick: () => dlg.close() }, '✕');
+    dlg.append(el('div', { class: 'dlg' }, el('div', { class: 'mn-dlghead' }, el('h2', {}, title), x), body));
+    let downOutside = false;
+    dlg.addEventListener('pointerdown', e => { downOutside = e.target === dlg; });
+    dlg.addEventListener('click', e => { if (e.target === dlg && downOutside) dlg.close(); });
     dlg.addEventListener('close', () => dlg.remove());
     document.body.append(dlg); dlg.showModal();
     return dlg;
@@ -941,7 +946,8 @@
     let rows = null, map = null, into = M.book;
     const pickFile = () => body.replaceChildren(
       el('p', { class: 'meta' }, 'Download your statement as a CSV file from your bank’s app or website (Monzo, Starling, Revolut, HSBC, Barclays, Lloyds, Nationwide and others all offer it), then choose it here. Importing the same statement twice is safe: lines already in are skipped.'),
-      el('label', { class: 'mn-drop', for: 'mn-file' }, icon('upload', 22), el('b', {}, 'Choose a statement file'), el('small', {}, 'or drop it here')), file);
+      el('label', { class: 'mn-drop', for: 'mn-file' }, icon('upload', 22), el('b', {}, 'Choose a statement file'), el('small', {}, 'or drop it here')), file,
+      el('div', { class: 'actions' }, el('button', { type: 'button', class: 'btn', onclick: () => dlg.close() }, 'Cancel')));
     const read = async f => {
       if (!f) return;
       if (f.size > 5 * 1024 * 1024) { toast('That file is too big for a statement (over 5 MB).'); return; }
@@ -1017,7 +1023,8 @@
         tx.length > 8 ? el('p', { class: 'meta' }, `…and ${tx.length - 8} more.`) : null,
         el('div', { class: 'actions' },
           el('button', { type: 'button', class: 'btn primary', disabled: !fresh.length, onclick: () => doImport(fresh) }, fresh.length ? `Import ${fresh.length} payment${fresh.length === 1 ? '' : 's'}` : 'Nothing new to import'),
-          el('button', { type: 'button', class: 'btn', onclick: () => { rows = null; file.value = ''; pickFile(); } }, 'Choose another file'))].filter(Boolean));
+          el('button', { type: 'button', class: 'btn', onclick: () => { rows = null; file.value = ''; pickFile(); } }, 'Choose another file'),
+          el('button', { type: 'button', class: 'btn mn-right', onclick: () => dlg.close() }, 'Cancel'))].filter(Boolean));
     }
     async function doImport(list) {
       const btn = body.querySelector('.btn.primary'); btn.disabled = true; btn.textContent = 'Importing…';
