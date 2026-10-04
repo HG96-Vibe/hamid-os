@@ -154,18 +154,25 @@
 .mn-psum .mn-amt{color:var(--mn-ink);font-weight:700}
 .mn-pnote{margin:-4px 0 8px;font-size:13px;color:var(--mn-muted)}
 .mn-plist{display:grid}
-.mn-prow{display:grid;grid-template-columns:28px minmax(0,1fr) auto 92px 30px;gap:10px;align-items:center;padding:8px 6px;border-bottom:1px solid var(--mn-line);border-radius:10px;transition:background .25s}
+.mn-prow{position:relative;isolation:isolate;display:grid;grid-template-columns:28px minmax(0,1fr) auto 92px 30px;gap:10px;align-items:center;padding:8px 6px;margin:2px 0;border-bottom:1px solid var(--mn-line);border-radius:10px;transition:border-color .35s}
+/* the green sits on a layer that fades in, so ticking glows rather than snaps */
+.mn-prow::before{content:"";position:absolute;inset:0;z-index:-1;border-radius:10px;background:linear-gradient(180deg,#047857,#065f46) left/6px 100% no-repeat,linear-gradient(135deg,#10b981,#059669);opacity:0;transform:scale(.985);transition:opacity .35s ease,transform .35s ease}
+.mn-prow.paid::before{opacity:1;transform:none}
+.mn-prow :is(.mn-pn b,.mn-pn small,.mn-pwhen small,.mn-pamt,.mn-kind,.mn-del,.mn-ptick){transition:color .35s,background-color .35s,border-color .35s}
 .mn-ptick{width:24px;height:24px;border-radius:7px;border:2px solid #a5b4fc;background:#fff;display:grid;place-items:center;padding:0;color:#fff;font:800 14px/1 var(--ui)}
 .mn-ptick:hover{border-color:var(--mn-in);background:#ecfdf5}
+.mn-prow.paid .mn-ptick{animation:mn-pop .32s cubic-bezier(.2,.9,.3,1.4)}
+@keyframes mn-pop{0%{transform:scale(.7)}100%{transform:scale(1)}}
 .mn-prow.late .mn-pwhen small{color:var(--mn-warn);font-weight:600}
 /* ticked as paid: the whole line goes green, like a finished task on Today */
-.mn-prow.paid{background:linear-gradient(180deg,#047857,#065f46) left/6px 100% no-repeat,linear-gradient(135deg,#10b981,#059669);color:#fff;border-bottom-color:transparent;margin:3px 0}
+.mn-prow.paid{border-bottom-color:transparent;color:#fff}
 .mn-prow.paid .mn-ptick{border-color:rgba(255,255,255,.85);background:rgba(255,255,255,.18);color:#fff}
 .mn-prow.paid :is(.mn-pn b,.mn-pamt){color:#fff}
 .mn-prow.paid :is(.mn-pn small,.mn-pwhen small){color:rgba(255,255,255,.9)}
 .mn-prow.paid .mn-kind{background:rgba(255,255,255,.2);color:#fff}
 .mn-prow.paid .mn-del{color:rgba(255,255,255,.8)}
 .mn-prow.paid .mn-del:hover{color:#fff;background:rgba(255,255,255,.15)}
+@media (prefers-reduced-motion:reduce){.mn-prow::before,.mn-prow *{transition:none!important;animation:none!important}}
 .mn-pn{border:0;background:none;text-align:left;color:var(--mn-ink);padding:0;min-width:0}
 .mn-pn b{display:block;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mn-pn small{display:block;font-size:12.5px;color:var(--mn-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
