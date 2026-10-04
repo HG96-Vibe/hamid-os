@@ -23,7 +23,8 @@
     upload: '<path d="M12 16V4M6 10l6-6 6 6M4 20h16"/>',
     sliders: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
     trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
-    plus: '<path d="M12 5v14M5 12h14"/>'
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    report: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/>'
   };
   const icon = (n, s = 16) => Object.assign(el('span', { class: 'mn-ic', 'aria-hidden': 'true' }),
     { innerHTML: `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[n]}</svg>` });
@@ -145,6 +146,7 @@
     return el('div', { class: 'mn-top' },
       el('div', { class: 'head mn-head' }, el('h1', {}, 'Capital'),
         el('div', { class: 'mn-actions' },
+          window.MoneyReport ? el('button', { type: 'button', class: 'btn', onclick: exportDialog }, icon('report'), el('span', {}, 'Export report')) : null,
           M.view === 'book' ? [
             el('button', { type: 'button', class: 'btn', onclick: importDialog }, icon('upload'), el('span', {}, 'Import statement')),
             el('button', { type: 'button', class: 'btn', onclick: catsDialog }, icon('sliders'), el('span', {}, 'Categories & budgets'))] : null,
@@ -668,6 +670,56 @@
     try { await q(sb.from('money_debts').delete().eq('id', d.id)); } catch (e) { return false; }
     M.debts = M.debts.filter(x => x !== d); M.debtPays = M.debtPays.filter(x => x.debt_id !== d.id);
     toast('Deleted.'); draw(); return true;
+  }
+
+  /* ---------- export: this month so far, every book (the same report that's emailed on the 30th) ---------- */
+  async function reportData(start, end) {
+    const prev = addMonths(start, -1);
+    const [cats, tx, planned, debts, debtPays, holdings, values] = await Promise.all([
+      q(sb.from('money_categories').select('book_id,name,kind,budget_pence')),
+      q(sb.from('money_tx').select('book_id,occurred_on,amount_pence,description,category,note,source,import_key').gte('occurred_on', prev).lte('occurred_on', end).limit(50000)),
+      q(sb.from('money_planned').select('id,book_id,name,amount_pence,cadence,next_on')).catch(() => []),
+      q(sb.from('money_debts').select('id,book_id,direction,name,amount_pence,due_on')).catch(() => []),
+      q(sb.from('money_debt_payments').select('debt_id,paid_on,amount_pence')).catch(() => []),
+      q(sb.from('money_holdings').select('id,name,archived')),
+      q(sb.from('money_values').select('holding_id,valued_on,value_pence').order('valued_on'))]);
+    return { books: M.books.map(b => ({ id: b.id, name: b.name, kind: b.kind })), cats, tx, planned, debts, debtPays, holdings, values };
+  }
+  async function exportDialog() {
+    const R = window.MoneyReport, t0 = today(), start = monthStart(t0);
+    const body = el('div', { class: 'mn-exp' }, el('p', { class: 'meta' }, 'Putting your report together…'));
+    const dlg = dialog('Export report', body, 'mn-expdlg');
+    let data;
+    try { data = await reportData(start, t0); } catch (e) { body.replaceChildren(el('p', { class: 'meta' }, 'Couldn’t load your figures. Check your connection and try again.')); return; }
+    const report = R.build(data, { start, end: t0, made: new Date().toISOString() });
+    const frame = el('iframe', { class: 'mn-expframe', title: 'Report preview' });
+    frame.srcdoc = R.html(report);
+    const file = `Capital report ${start} to ${t0}`;
+    const pdf = () => { const w = frame.contentWindow; if (!w) return; w.document.title = file; w.focus(); w.print(); };
+    const sheet = () => {
+      const url = URL.createObjectURL(new Blob([R.csv(data, { start, end: t0 })], { type: 'text/csv;charset=utf-8' }));
+      const a = el('a', { href: url, download: file + '.csv' }); document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      toast('Spreadsheet downloaded.');
+    };
+    const mail = el('button', { type: 'button', class: 'btn', onclick: async () => {
+      mail.disabled = true; mail.textContent = 'Sending…';
+      let res = null;
+      try { res = await sb.functions.invoke('capital-report', { body: { send: true } }); } catch (e) {}
+      const sent = res && !res.error && res.data && res.data.emailed;
+      mail.disabled = false; mail.textContent = sent ? 'Sent ✓' : 'Email it to me';
+      toast(sent ? `Report emailed to ${(state.user && state.user.email) || 'you'}.` : 'Couldn’t send the email just now. Try again in a minute.');
+    } }, 'Email it to me');
+    body.replaceChildren(
+      el('p', { class: 'meta mn-expwhat' }, el('b', {}, `${fmt(start, { day: 'numeric' })}–${fmt(t0, { day: 'numeric', month: 'long', year: 'numeric' })}`),
+        ` · ${report.books.map(b => b.name).join(', ')} · ${gbp(report.all.in)} in, ${gbp(report.all.out)} out`),
+      frame,
+      el('div', { class: 'actions' },
+        el('button', { type: 'button', class: 'btn primary', onclick: pdf }, 'Save as PDF'),
+        el('button', { type: 'button', class: 'btn', onclick: sheet }, 'Download spreadsheet'),
+        mail,
+        el('button', { type: 'button', class: 'btn mn-right', onclick: () => dlg.close() }, 'Close')),
+      el('p', { class: 'mn-exptip' }, 'This report is emailed to you automatically on the 30th of every month at 6pm (on the last day in February). “Save as PDF” opens the print window: choose “Save as PDF” there.'));
   }
 
   /* ---------- dialogs ---------- */

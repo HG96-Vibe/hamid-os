@@ -217,6 +217,13 @@
 .mn-dpays td:last-child{width:34px}
 .mn-dpays .meta{margin:0}
 
+/* export report */
+.mn-expdlg{width:min(860px,calc(100% - 24px))}
+.mn-exp{display:grid;gap:12px}
+.mn-exp .meta{margin:0}
+.mn-expframe{width:100%;height:min(62vh,720px);border:1px solid var(--line);border-radius:14px;background:#1e1b4b}
+.mn-exptip{margin:0;font-size:13px;color:var(--muted)}
+
 /* dialogs */
 .mn-dlg .seg button{border:0;background:none;padding:7px 16px;font-size:13.5px;font-weight:600;color:var(--muted)}
 .mn-dlg .seg button.on{background:var(--i500);color:#fff}
