@@ -281,6 +281,9 @@ html.light .mn-sbtn[aria-current="true"]{box-shadow:0 8px 22px rgba(60,50,20,.14
 .mn-hide .mn-sbtn small{filter:blur(6px)}
 
 /* dialogs */
+.mn-pdfnote{margin:0;padding:8px 12px;border-radius:10px;background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.35);color:var(--text);font-size:13.5px}
+html.light .mn-pdfnote{background:#fffbeb;border-color:#fcd34d}
+.mn-reading{margin:0}
 .mn-dlghead{display:flex;align-items:flex-start;gap:12px}
 .mn-dlghead h2{flex:1 1 auto}
 .mn-x{flex:none;width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--soft);color:var(--text);font:600 16px/1 var(--ui);display:grid;place-items:center;padding:0;cursor:pointer;transition:background .15s,border-color .15s}
