@@ -117,11 +117,18 @@
     return page;
   }
   // redraw in place: keep the scroll position, and the focus on the quick-add box if it was there
-  function draw(focusId) {
+  // keep: an element already on the page (the direct debits card) to put back as it is instead of rebuilding it;
+  // only its totals line is refreshed
+  function draw(focusId, keep) {
     if (!page) return;
     const y = window.scrollY, active = focusId || (document.activeElement && document.activeElement.id);
     page.classList.toggle('mn-hide', M.hide);
     page.replaceChildren(header(), ...(M.view === 'book' ? bookView() : worthView()));
+    const fresh = keep && page.querySelector('.' + keep.classList[1]);
+    if (fresh && fresh !== keep) {
+      for (const sel of ['.mn-ch', '.mn-total']) { const a = keep.querySelector(sel), b = fresh.querySelector(sel); if (a && b) a.replaceWith(b); }
+      fresh.replaceWith(keep);
+    }
     if (Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y);
     if (active && active.startsWith('mn-')) { const f = document.getElementById(active); if (f) f.focus({ preventScroll: true }); }
   }
@@ -409,23 +416,70 @@
     return n;
   }
   // tick: it's been paid, so it goes into money out (on the day it was due, or today if paid early); untick takes it out again
-  async function togglePaid(p) {
-    const d = cycleOf(p), key = ddKey(p, d), had = M.ddPaid.get(key);
-    if (had) {
-      try { await q(sb.from('money_tx').delete().eq('id', had.id)); } catch (e) { return; }
-      M.ddPaid.delete(key); M.tx = M.tx.filter(x => x.id !== had.id);
-      toast(`${p.name}: unticked and taken out of money out.`); draw(); return;
+  // The line changes the moment you click (tick, green fades in), then glides to its new place; the save
+  // happens meanwhile, and the rest of the page (money out, budgets, payments) updates once it's done.
+  const busy = new Set();
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  async function togglePaid(p, rowEl) {
+    if (busy.has(p.id)) return;
+    busy.add(p.id);
+    const d = cycleOf(p), key = ddKey(p, d), had = M.ddPaid.get(key), nowPaid = !had;
+    const card = rowEl && rowEl.closest('.mn-planned');
+    if (rowEl) paintRow(rowEl, p, d, nowPaid);
+    const save = (async () => {
+      if (had) { await q(sb.from('money_tx').delete().eq('id', had.id)); return null; }
+      const outCats = catsOf('out').map(c => c.name);
+      const category = guessCat(p.name, false) || ['Bills', 'Subscriptions'].find(c => outCats.includes(c)) || null;
+      return q(sb.from('money_tx').insert({ user_id: DS.uid(), book_id: M.book, occurred_on: d <= today() ? d : today(), amount_pence: -p.amount_pence,
+        description: p.name.slice(0, 300), category, note: 'Direct debit, ticked as paid', source: 'manual', import_key: key }).select().single());
+    })();
+    let row, failed = false;
+    try { [row] = await Promise.all([save, wait(calm() ? 0 : 260)]); } catch (e) { failed = true; }
+    if (failed) { busy.delete(p.id); if (rowEl) paintRow(rowEl, p, d, !nowPaid); return; }
+    if (had) { M.ddPaid.delete(key); M.tx = M.tx.filter(x => x.id !== had.id); }
+    else {
+      M.ddPaid.set(key, row);
+      if (row.occurred_on >= addMonths(M.month, -5) && row.occurred_on <= monthEnd(M.month)) { M.tx.push(row); sortTx(); }
     }
-    const outCats = catsOf('out').map(c => c.name);
-    const category = guessCat(p.name, false) || ['Bills', 'Subscriptions'].find(c => outCats.includes(c)) || null;
-    let row;
-    try { row = await q(sb.from('money_tx').insert({ user_id: DS.uid(), book_id: M.book, occurred_on: d <= today() ? d : today(), amount_pence: -p.amount_pence,
-      description: p.name.slice(0, 300), category, note: 'Direct debit, ticked as paid', source: 'manual', import_key: key }).select().single()); } catch (e) { return; }
-    M.ddPaid.set(key, row);
-    if (row.occurred_on >= addMonths(M.month, -5) && row.occurred_on <= monthEnd(M.month)) { M.tx.push(row); sortTx(); }
-    toast(`${p.name} paid: ${gbp(-p.amount_pence)} added to money out${category ? ' · ' + category : ''}.`);
-    draw();
+    if (rowEl && rowEl.isConnected) await glide(rowEl.parentElement);
+    busy.delete(p.id);
+    toast(had ? `${p.name}: unticked and taken out of money out.` : `${p.name} paid: ${gbp(-p.amount_pence)} added to money out${row.category ? ' · ' + row.category : ''}.`);
+    draw(null, card && card.isConnected ? card : null);
   }
+  const calm = () => window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // what a line shows, paid or not
+  function whenText(p, due, paid) {
+    if (paid) return `Paid ${fmt(due, { day: 'numeric', month: 'short' })}` + (afterCycle(p) ? ` · next ${fmt(afterCycle(p), { day: 'numeric', month: 'short' })}` : '');
+    return due < today() ? `Was due ${fmt(due, { day: 'numeric', month: 'short' })} · not ticked` : dueLabel(due);
+  }
+  function paintRow(r, p, due, paid) {
+    r.classList.toggle('paid', paid); r.classList.toggle('late', !paid && due < today());
+    const t = r.querySelector('.mn-ptick');
+    t.setAttribute('aria-pressed', String(paid)); t.textContent = paid ? '✓' : '';
+    t.title = paid ? 'Paid. Click to untick' : 'Tick when it’s been paid';
+    t.setAttribute('aria-label', paid ? `${p.name} is paid. Untick` : `Mark ${p.name} as paid`);
+    r.querySelector('.mn-pwhen small').textContent = whenText(p, due, paid);
+  }
+  // put the lines in order (still to pay by date, then paid), sliding each from where it was to where it goes
+  function glide(list) {
+    const rows = [...list.children], byId = new Map(rows.map(r => [r.dataset.pid, r]));
+    const order = plannedOrder().map(x => byId.get(x.p.id)).filter(Boolean);
+    if (order.every((r, i) => r === rows[i])) return Promise.resolve();
+    const was = new Map(rows.map(r => [r, r.getBoundingClientRect()])), focused = document.activeElement;
+    order.forEach(r => list.append(r));
+    if (focused && list.contains(focused) && document.activeElement !== focused) focused.focus({ preventScroll: true }); // moving a line drops focus
+    if (calm() || !list.animate) return Promise.resolve();
+    const z = list.offsetWidth ? list.getBoundingClientRect().width / list.offsetWidth : 1;
+    const anims = rows.map(r => {
+      const a = was.get(r), b = r.getBoundingClientRect(), dy = (a.top - b.top) / z;
+      if (Math.abs(dy) < 1) return null;
+      return r.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }], { duration: 340, easing: 'cubic-bezier(.2,.7,.2,1)' }).finished.catch(() => {});
+    }).filter(Boolean);
+    return Promise.all(anims);
+  }
+  // still to pay first (by date), then the ones ticked as paid, like finished tasks on Today
+  const plannedOrder = () => (M.planned || []).map(p => { const due = cycleOf(p); return { p, due, paid: isPaid(p, due) }; })
+    .sort((a, b) => (a.paid - b.paid) || (a.due < b.due ? -1 : a.due > b.due ? 1 : 0));
   function dueLabel(d) {
     const t0 = today(), days = Math.round((Date.parse(d) - Date.parse(t0)) / 864e5);
     if (days < 0) return 'Went out ' + fmt(d, { day: 'numeric', month: 'short' });
@@ -434,9 +488,7 @@
     return fmt(d, { weekday: 'short', day: 'numeric', month: 'short' }) + (days <= 14 ? ` · in ${days} days` : '');
   }
   function plannedCard() {
-    // still to pay first (by date), then the ones ticked as paid, like finished tasks on Today
-    const list = (M.planned || []).map(p => { const due = cycleOf(p); return { p, due, paid: isPaid(p, due) }; })
-      .sort((a, b) => (a.paid - b.paid) || (a.due < b.due ? -1 : a.due > b.due ? 1 : 0));
+    const list = plannedOrder();
     const monthly = M.planned.reduce((a, p) => a + p.amount_pence * PER_MONTH[p.cadence], 0);
     const left = M.planned.reduce((a, p) => a + leftThisMonth(p), 0);
     const name = el('input', { class: 'field', id: 'mn-pname', maxlength: '80', placeholder: 'e.g. Council tax, Gym, Phone', 'aria-label': 'Name' });
@@ -459,13 +511,12 @@
         M.planned.length ? el('span', { class: 'mn-psum' }, amt(Math.round(monthly), { whole: true }), ' a month') : null),
       el('p', { class: 'mn-pnote' }, 'Tick one when it’s been paid and it’s added to money out.'),
       M.planned.length ? el('p', { class: 'mn-total' }, left ? [amt(left), ' still to go out this month'] : 'Nothing more to go out this month.') : null,
-      list.length ? el('div', { class: 'mn-plist' }, list.map(({ p, due, paid }) => el('div', { class: 'mn-prow' + (paid ? ' paid' : due < today() ? ' late' : '') },
-        el('button', { type: 'button', class: 'mn-ptick', 'aria-pressed': String(paid), title: paid ? 'Paid. Click to untick' : 'Tick when it’s been paid',
-          'aria-label': paid ? `${p.name} is paid. Untick` : `Mark ${p.name} as paid`, onclick: () => togglePaid(p) }, paid ? '✓' : ''),
+      list.length ? el('div', { class: 'mn-plist' }, list.map(({ p, due, paid }) => el('div', { class: 'mn-prow' + (paid ? ' paid' : due < today() ? ' late' : ''), 'data-pid': p.id },
+        el('button', { type: 'button', class: 'mn-ptick', id: 'mn-tick-' + p.id, 'aria-pressed': String(paid), title: paid ? 'Paid. Click to untick' : 'Tick when it’s been paid',
+          'aria-label': paid ? `${p.name} is paid. Untick` : `Mark ${p.name} as paid`, onclick: e => togglePaid(p, e.currentTarget.closest('.mn-prow')) }, paid ? '✓' : ''),
         el('button', { type: 'button', class: 'mn-pn', title: 'Edit', onclick: () => plannedDialog(p) }, el('b', {}, p.name), p.note ? el('small', {}, p.note) : null),
         el('span', { class: 'mn-pwhen' }, el('span', { class: 'mn-kind' }, CADENCE[p.cadence]),
-          el('small', {}, paid ? `Paid ${fmt(due, { day: 'numeric', month: 'short' })}` + (afterCycle(p) ? ` · next ${fmt(afterCycle(p), { day: 'numeric', month: 'short' })}` : '')
-            : due < today() ? `Was due ${fmt(due, { day: 'numeric', month: 'short' })} · not ticked` : dueLabel(due))),
+          el('small', {}, whenText(p, due, paid))),
         amt(p.amount_pence, {}, 'mn-pamt'),
         el('button', { type: 'button', class: 'mn-del', title: 'Delete', 'aria-label': `Delete ${p.name} from direct debits`, onclick: () => removePlanned(p) }, icon('trash', 15))))) :
         el('p', { class: 'mn-empty' }, 'Note down your direct debits, standing orders and bills, with how much and when they go out.'),
