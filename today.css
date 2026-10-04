@@ -75,3 +75,12 @@
 .td-row.td-lift{z-index:2;box-shadow:0 0 0 2px rgba(251,191,36,.65),0 22px 44px rgba(8,5,30,.35);transition:box-shadow .3s}
 .td-row.s-done .hm-star:not(.on){color:rgba(255,255,255,.75)}
 .td-row.s-done .hm-star.on{color:#fde68a}
+
+/* ---------- put tasks in your own order by dragging (reorder.js): Today rows and Week cards ---------- */
+.td-list > .td-row[data-oid],.outcomes > .wk-card[data-oid]{touch-action:auto}
+@media (pointer:fine){.td-list > .td-row[data-oid]:not(.s-carried),.outcomes > .wk-card[data-oid]{cursor:grab}}
+.ro-box{position:relative}
+.ro-hole{opacity:.28;transition:opacity .12s ease}
+.ro-ghost{position:fixed!important;left:0!important;top:0!important;margin:0!important;z-index:1000;pointer-events:none;will-change:transform;
+  box-shadow:0 22px 46px rgba(8,5,30,.45),0 0 0 2px #fbbf24!important;transition:none!important}
+body.ro-dragging,body.ro-dragging *{cursor:grabbing!important;user-select:none!important;-webkit-user-select:none!important}
