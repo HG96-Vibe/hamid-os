@@ -1,4 +1,4 @@
-// Light mode ("Paper"). Dark is the default; the sun / moon button on the Home profile strip switches.
+// Light mode ("Paper"). Dark is the default; the sun / moon button in the top bar (next to the +) switches, on every tab.
 // Also the app refresh (reload with the latest version): click the logo / "Hamid OS" in the header, or press Cmd+R / Ctrl+R,
 // and Cmd+Left / Cmd+Right to move between tabs.
 // The choice is kept per device. Loaded in <head> so the page never flashes the wrong theme.
@@ -73,16 +73,14 @@
     if ((e.key === 'Enter' || e.key === ' ') && e.target.closest && e.target.closest('#app .brand')) { e.preventDefault(); refresh(); }
   });
 
-  // Put the sun / moon button on the Home profile strip whenever it is drawn.
+  // Put the sun / moon button in the top bar, just before the + (capture) button, whenever the bar is drawn.
   function inject() {
-    var pf = document.querySelector('#app .pf');
-    if (!pf || pf.querySelector('.lt-toggle')) return;
-    var box = document.createElement('div'); box.className = 'lt-stack';
+    var acts = document.querySelector('#app header.bar .baractions');
+    if (!acts || acts.querySelector('.lt-toggle')) return;
     var b = document.createElement('button');
     b.type = 'button'; b.className = 'lt-toggle';
     b.addEventListener('click', toggle);
-    box.appendChild(b);
-    pf.appendChild(box);
+    acts.insertBefore(b, acts.firstChild);
     apply(read());
   }
   var pending = false;
