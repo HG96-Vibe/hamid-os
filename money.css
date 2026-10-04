@@ -186,7 +186,7 @@
 .mn-padd .btn.primary{display:inline-flex;align-items:center;justify-content:center;gap:4px}
 
 /* loans & lending (Personal) */
-.mn-debts{align-items:stretch}
+.mn-debts{align-items:start}
 .mn-dlist{display:grid}
 .mn-drow{display:grid;grid-template-columns:minmax(0,1fr);gap:6px;padding:10px 4px 12px;border-bottom:1px solid var(--mn-line)}
 .mn-drow>*,.mn-drow .mn-pn{grid-area:auto}
@@ -223,6 +223,14 @@
 .mn-exp .meta{margin:0}
 .mn-expframe{width:100%;height:min(62vh,720px);border:1px solid var(--line);border-radius:14px;background:#1e1b4b}
 .mn-exptip{margin:0;font-size:13px;color:var(--muted)}
+
+/* long lists: 10 at a time, then a scrollbar (always visible, also on a Mac) */
+.mn-cap.capped{overflow-y:auto;overscroll-behavior:contain;padding-right:6px;border-radius:10px}
+.mn-cap.capped::-webkit-scrollbar{width:8px}
+.mn-cap.capped::-webkit-scrollbar-track{background:rgba(30,27,75,.06);border-radius:8px}
+.mn-cap.capped::-webkit-scrollbar-thumb{background:#a5b4fc;border-radius:8px}
+.mn-cap.capped::-webkit-scrollbar-thumb:hover{background:#818cf8}
+.mn-cap.capped:focus-visible{outline:3px solid var(--i400);outline-offset:2px}
 
 /* dialogs */
 .mn-dlg .seg button{border:0;background:none;padding:7px 16px;font-size:13.5px;font-weight:600;color:var(--muted)}
