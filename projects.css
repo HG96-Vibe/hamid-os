@@ -64,3 +64,17 @@
 .pj-del{margin-left:auto}
 
 @media (max-width:560px){.pj-cols{grid-template-columns:1fr}.pj-filter{margin-left:0}}
+
+/* ---------- drag a task between This month, This week and Today (project page) ---------- */
+.pj-dndhint{margin:-14px 0 18px;font-size:13px}
+.pj-dnd{transition:box-shadow .15s ease,background-color .15s ease}
+.pj-dnd .pj-items li{padding:5px 8px;margin:0 -8px;border-radius:9px;cursor:grab;user-select:none;-webkit-user-select:none;transition:background-color .12s ease,opacity .15s ease}
+.pj-dnd .pj-items li:not(.s-done):hover{background:rgba(79,70,229,.07)}
+.pj-dnd .pj-items li.s-done:hover{filter:brightness(1.06)}
+.pj-dnd .pj-items li.pj-dragging{opacity:.28}
+.pj-dnd.pj-over{box-shadow:0 0 0 3px #fbbf24,0 18px 40px rgba(8,5,30,.35);background-color:#fffaf0}
+.pj-ghost{position:fixed;left:0;top:0;z-index:1000;margin:0;pointer-events:none;will-change:transform}
+.pj-ghost li{padding:7px 10px;border-radius:10px;box-shadow:0 14px 30px rgba(8,5,30,.35),0 0 0 1.5px #fbbf24}
+.pj-ghost li:not(.s-done){background:#fff;color:#1e1b4b}
+.pj-ghost li .pj-it{text-decoration:none}
+body.pj-is-dragging,body.pj-is-dragging *{cursor:grabbing!important;user-select:none!important;-webkit-user-select:none!important}

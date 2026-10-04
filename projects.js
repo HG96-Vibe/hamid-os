@@ -115,8 +115,8 @@
       el('span', { class: 'oprog' }, s.outcomes.length ? `${s.achieved} of ${s.outcomes.length} outcome${s.outcomes.length === 1 ? '' : 's'}` : 'No outcomes this month'));
   }
 
-  const itemList = (items, empty, max = 4) => items.length
-    ? el('ul', { class: 'pj-items' }, items.slice(0, max).map(t => el('li', { class: 's-' + t.status },
+  const itemList = (items, empty, max = 4, h) => items.length
+    ? el('ul', { class: 'pj-items' }, items.slice(0, max).map(t => el('li', { class: 's-' + t.status, 'data-id': h ? t.id : null, 'data-h': h || null },
         el('span', { class: 'pj-tick', 'aria-hidden': 'true' }, t.status === 'done' ? '✓' : ''),
         el('button', { class: 'pj-it', onclick: e => { e.stopPropagation(); DS.openItem(t.id); } }, t.title))),
         items.length > max ? el('li', { class: 'pj-more' }, `+${items.length - max} more`) : null)
@@ -178,13 +178,20 @@
     return wrap;
   }
 
+  const hero = s => el('div', { class: 'pj-hero outcome' }, progress(s),
+    el('p', { class: 'pj-foot' }, [s.openToday ? `${s.openToday} open today` : 'Nothing open today', s.focus ? `⏱ ${mins(s.focus)} focus this week` : null,
+      s.last ? `last activity ${timeAgo(s.last)}` : null].filter(Boolean).join(' · ')));
+  let pageCtx = null; // the project page on screen and its data, for drag and drop
+
   function projectPage(p, D) {
     const s = statsFor([p.id], D);
+    pageCtx = { p, D };
     const r = rootOf(p);
     const done = s.recent.filter(t => t.status === 'done').slice(0, 15);
     const addTitle = el('input', { class: 'field', placeholder: 'Add a task for this project', maxlength: '500', 'aria-label': 'New task title' });
     const addWhen = el('select', { class: 'field pj-when', 'aria-label': 'When' },
-      el('option', { value: 'day' }, 'Today'), el('option', { value: 'week' }, 'This week'), el('option', { value: 'month' }, 'This month'));
+      el('option', { value: 'month' }, 'This month'), el('option', { value: 'week' }, 'This week'), el('option', { value: 'day' }, 'Today'));
+    addWhen.value = 'month'; // new project tasks start as this month's; drag them to the week or today when it's time
     const add = async e => {
       e.preventDefault();
       const title = addTitle.value.trim(); if (!title) return addTitle.focus();
@@ -193,7 +200,8 @@
         title, project_id: p.id, position: Date.now() / 1000 }));
       toast('Added.'); refresh();
     };
-    const sec = (title, items, empty) => el('section', { class: 'pj-sec' }, el('h3', {}, title), itemList(items, empty, Infinity));
+    // the three lists: drag a task from one onto another to move it (see "drag a task" below)
+    const sec = (title, items, empty, h) => el('section', { class: 'pj-sec pj-dnd', 'data-h': h, 'data-empty': empty }, el('h3', {}, title), itemList(items, empty, Infinity, h));
     return el('div', { class: 'pj pj-page', style: `--pj:${color(p.id)}` },
       el('button', { class: 'linkish pj-back', onclick: () => { view.open = null; refresh(); } }, '← All projects'),
       el('div', { class: 'head' },
@@ -203,20 +211,99 @@
         p.status !== 'active' ? el('span', { class: 'pill' }, p.status === 'paused' ? 'Paused' : 'Done') : null,
         el('button', { class: 'btn', onclick: () => editDialog(p) }, 'Edit')),
       p.goal ? el('p', { class: 'meta pj-goal-big' }, p.goal) : null,
-      el('div', { class: 'pj-hero outcome' }, progress(s),
-        el('p', { class: 'pj-foot' }, [s.openToday ? `${s.openToday} open today` : 'Nothing open today', s.focus ? `⏱ ${mins(s.focus)} focus this week` : null,
-          s.last ? `last activity ${timeAgo(s.last)}` : null].filter(Boolean).join(' · '))),
+      hero(s),
       el('form', { class: 'pj-addrow', onsubmit: add }, addTitle, addWhen, el('button', { class: 'btn primary', type: 'submit' }, 'Add')),
+      el('p', { class: 'meta pj-dndhint' }, 'Drag a task onto another list to move it between this month, this week and today.'),
       el('div', { class: 'pj-page-grid' },
-        sec('This month’s outcomes', s.outcomes, 'No outcomes for this project this month.'),
-        sec('This week’s priorities', s.week, 'No priorities this week.'),
-        sec('Today', s.day, 'Nothing on today’s sheet.'),
+        sec('This month’s outcomes', s.outcomes, 'No outcomes for this project this month.', 'month'),
+        sec('This week’s priorities', s.week, 'No priorities this week.', 'week'),
+        sec('Today', s.day, 'Nothing on today’s sheet.', 'day'),
         el('section', { class: 'pj-sec' }, el('h3', {}, 'Recently done'),
           done.length ? el('ul', { class: 'pj-log' }, done.map(t => el('li', {},
             el('span', {}, t.title), el('time', {}, fmt(t.period_start, { day: 'numeric', month: 'short' }))))) : el('p', { class: 'pj-none' }, 'Nothing finished in the last 60 days.'))),
       DS.create ? DS.create.forProject(family(p.id), p.id) : null,
       isRoot(p) && kids(p.id).length ? el('section', { class: 'section' }, el('h2', {}, 'Projects in ' + p.name),
         el('div', { class: 'pj-links' }, kids(p.id).map(k => el('button', { class: 'pill pj-link', style: `--pj:${color(k.id)}`, onclick: () => openProject(k.id) }, k.name)))) : null);
+  }
+
+  /* ---------- drag a task between This month, This week and Today (project page, mouse or trackpad) ----------
+     The task follows the pointer, the list under it lights up, and on release it glides into its new list.
+     The page is not redrawn, so nothing jumps; the change is saved in the background (and undone if that fails). */
+  const LABEL = { month: 'this month', week: 'this week', day: 'today' };
+  let drag = null, swallowClick = false;
+  const zoomOf = elm => (elm.offsetWidth ? elm.getBoundingClientRect().width / elm.offsetWidth : 1) || 1;
+  document.addEventListener('pointerdown', e => {
+    const li = e.button === 0 && e.pointerType !== 'touch' && e.target.closest && e.target.closest('.pj-dnd li[data-id]');
+    if (!li) return;
+    drag = { li, x0: e.clientX, y0: e.clientY, live: false };
+  });
+  document.addEventListener('pointermove', e => {
+    if (!drag) return;
+    if (!drag.live) { if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 6) return; startDrag(e); }
+    e.preventDefault();
+    place(e.clientX - drag.dx, e.clientY - drag.dy);
+    const over = document.elementFromPoint(e.clientX, e.clientY)?.closest('.pj-dnd[data-h]') || null;
+    if (over !== drag.over) { drag.over?.classList.remove('pj-over'); drag.over = over; if (over && over.dataset.h !== drag.from) over.classList.add('pj-over'); }
+  });
+  document.addEventListener('pointerup', () => { if (drag) (drag.live ? drop() : (drag = null)); });
+  document.addEventListener('pointercancel', () => { if (drag) (drag.live ? settle(null) : (drag = null)); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && drag && drag.live) settle(null); });
+  // a drag should not also count as a click on the task (which would open it)
+  document.addEventListener('click', e => { if (swallowClick) { swallowClick = false; e.stopPropagation(); e.preventDefault(); } }, true);
+
+  function startDrag(e) {
+    const li = drag.li, r = li.getBoundingClientRect();
+    drag.live = true; drag.from = li.dataset.h; drag.dx = e.clientX - r.left; drag.dy = e.clientY - r.top;
+    drag.ghost = el('ul', { class: 'pj-items pj-ghost', 'aria-hidden': 'true' }, li.cloneNode(true));
+    document.body.append(drag.ghost);
+    drag.z = zoomOf(drag.ghost) || 1;
+    drag.ghost.style.width = r.width / drag.z + 'px';
+    li.classList.add('pj-dragging'); document.body.classList.add('pj-is-dragging');
+    place(r.left, r.top);
+  }
+  function place(x, y) { drag.ghost.style.transform = `translate(${x / drag.z}px, ${y / drag.z}px) rotate(1.2deg)`; }
+
+  async function drop() {
+    const to = drag.over && drag.over.dataset.h !== drag.from ? drag.over : null;
+    swallowClick = true; setTimeout(() => { swallowClick = false; }, 0);
+    if (!to) return settle(null);
+    const { li, from } = drag, id = li.dataset.id, h = to.dataset.h, fromSec = li.closest('.pj-dnd');
+    putIn(li, to); settle(li); // move it on screen straight away
+    const ok = await moveTask(id, from, h);
+    if (!ok) { putIn(li, fromSec); return; } // saving failed: put it back
+    toast(`Moved to ${LABEL[h]}.`);
+  }
+  // move a task row into a list on the page, keeping the "nothing here" notes right
+  function putIn(li, sec) {
+    const old = li.closest('.pj-dnd');
+    let ul = sec.querySelector('.pj-items');
+    if (!ul) { ul = el('ul', { class: 'pj-items' }); sec.querySelector('.pj-none')?.replaceWith(ul); }
+    ul.append(li); li.dataset.h = sec.dataset.h;
+    if (old && old !== sec && !old.querySelector('.pj-items li')) old.querySelector('.pj-items')?.replaceWith(el('p', { class: 'pj-none' }, old.dataset.empty));
+  }
+  // glide the floating copy to where the task now sits (or back where it came from), then show the real row again
+  function settle(target) {
+    const d = drag; drag = null;
+    d.over?.classList.remove('pj-over'); document.body.classList.remove('pj-is-dragging');
+    const li = target || d.li, r = li.getBoundingClientRect(), from = d.ghost.style.transform;
+    const end = () => { d.ghost.remove(); d.li.classList.remove('pj-dragging'); };
+    if (!d.ghost.animate || matchMedia('(prefers-reduced-motion: reduce)').matches) return end();
+    d.ghost.animate([{ transform: from }, { transform: `translate(${r.left / d.z}px, ${r.top / d.z}px) rotate(0deg)` }],
+      { duration: 220, easing: 'cubic-bezier(.2,.7,.2,1)', fill: 'forwards' }).onfinish = end;
+  }
+  async function moveTask(id, from, h) {
+    const t0 = today(), period = h === 'day' ? t0 : h === 'week' ? weekStart(t0) : monthStart(t0);
+    try {
+      await q(sb.from('tasks').update({ horizon: h, period_start: period, parent_id: null, pinned: false, position: Date.now() / 1000 }).eq('id', id));
+      await q(sb.from('tasks').update({ parent_id: null }).eq('parent_id', id)); // links to it no longer fit
+    } catch (e) { return false; }
+    // keep the page's numbers right without redrawing it
+    const ctx = pageCtx; if (!ctx) return true;
+    const D = ctx.D, t = D[from].find(x => x.id === id);
+    if (t) { D[from] = D[from].filter(x => x !== t); Object.assign(t, { parent_id: null, period_start: period }); D[h].push(t); }
+    const old = document.querySelector('.pj-page .pj-hero');
+    if (old) old.replaceWith(hero(statsFor([ctx.p.id], D)));
+    return true;
   }
 
   function openProject(id) {
