@@ -20,7 +20,7 @@
   const TEXT_COLOURS = ['#000000', '#434343', '#666666', '#999999', '#b45309', '#d97706', '#dc2626', '#be185d', '#7c3aed', '#4338ca', '#2563eb', '#0891b2', '#0d9488', '#16a34a', '#65a30d', '#ca8a04'];
   const MARKS = ['#fef08a', '#bbf7d0', '#a5f3fc', '#bfdbfe', '#e9d5ff', '#fbcfe8', '#fed7aa', '#e5e7eb'];
   const TRASH_DAYS = 30;
-  const LIST_COLS = 'id,title,folder_id,project_id,pinned,word_count,plain,page,created_at,updated_at,deleted_at';
+  const LIST_COLS = 'id,title,folder_id,project_id,pinned,word_count,plain,page,file,created_at,updated_at,deleted_at';
   const BUCKET = 'doc-images', SIGN_SECS = 6 * 3600, VERSION_EVERY = 10 * 60e3;
 
   /* ---------- icons ---------- */
@@ -52,7 +52,9 @@
     inbox: '<path d="M3 13h5l1.5 3h5L16 13h5"/><path d="M5 5h14l2 8v6H3v-6z"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
     image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="m4 18 5-5 4 4 3-3 4 4"/>',
-    history: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7.5V12l3 2"/>'
+    history: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7.5V12l3 2"/>',
+    upload: '<path d="M12 16V4M6 10l6-6 6 6M4 20h16"/>',
+    back: '<path d="m15 18-6-6 6-6"/>'
   };
   function icon(name, size = 18) {
     const s = document.createElement('span');
@@ -133,6 +135,12 @@
     imgs.forEach(i => { const u = m[i.getAttribute('data-path')]; if (u) i.src = u; });
     await Promise.all(imgs.map(i => (i.decode ? i.decode().catch(() => {}) : null)));
   }
+  async function signHtml(html) {
+    const box = document.createElement('div'); box.innerHTML = html;
+    const imgs = [...box.querySelectorAll('img[data-path]')], m = await signPaths(imgs.map(i => i.getAttribute('data-path')));
+    imgs.forEach(i => { const u = m[i.getAttribute('data-path')]; if (u) i.setAttribute('src', u); });
+    return box.innerHTML;
+  }
   // Big photos are scaled down to 2000px; WebP and other types become JPEG or PNG so Word can open them.
   async function prepImage(file) {
     if (file.type === 'image/gif' && file.size <= 8e6) return { blob: file, ext: 'gif', type: 'image/gif' };
@@ -207,7 +215,7 @@
       sb.from('documents').delete().lt('deleted_at', cutoff).then(({ error }) => {
         if (error) return;
         C.docs = C.docs.filter(d => !old.includes(d));
-        old.forEach(d => removeImages(d.id));
+        old.forEach(d => { removeImages(d.id); removeFile(d); });
       });
     }
   }
@@ -344,7 +352,7 @@
     const trash = !!d.deleted_at;
     const s = C.search.trim().toLowerCase();
     const days = trash ? Math.max(0, TRASH_DAYS - Math.floor((Date.now() - new Date(d.deleted_at)) / 864e5)) : 0;
-    const meta = [d.folder_id && C.sel !== d.folder_id ? folderPath(d.folder_id) : null, (trash ? 'Deleted ' + when(d.deleted_at) : 'Edited ' + when(d.updated_at)), plural(d.word_count || 0, 'word')].filter(Boolean);
+    const meta = [d.folder_id && C.sel !== d.folder_id ? folderPath(d.folder_id) : null, (trash ? 'Deleted ' + when(d.deleted_at) : (d.file ? 'Uploaded ' : 'Edited ') + when(d.updated_at)), d.file ? fileSize(d.file.size) : plural(d.word_count || 0, 'word')].filter(Boolean);
     const pin = !trash ? el('button', { class: 'cr-ic cr-pin' + (d.pinned ? ' on' : ''), type: 'button', title: d.pinned ? 'Unpin' : 'Pin to the top', 'aria-label': d.pinned ? 'Unpin' : 'Pin', 'aria-pressed': String(!!d.pinned),
       onclick: async e => { e.stopPropagation(); await patchDoc(d, { pinned: !d.pinned }); rerender(); } }, icon('star', 17)) : null;
     const del = !trash ? el('button', { class: 'cr-ic', type: 'button', title: 'Move to Trash', 'aria-label': 'Move to Trash',
@@ -352,11 +360,11 @@
     const restore = trash ? [
       el('button', { class: 'btn cr-small', type: 'button', onclick: async e => { e.stopPropagation(); await patchDoc(d, { deleted_at: null }); if (d.folder_id && !folderById(d.folder_id)) d.folder_id = null; toast('Restored.'); drawList(); drawSide(); } }, 'Restore'),
       el('button', { class: 'btn danger cr-small', type: 'button', onclick: async e => { e.stopPropagation(); if (!confirm(`Delete "${d.title}" for good? This can’t be undone.`)) return;
-        await q(sb.from('documents').delete().eq('id', d.id)); C.docs = C.docs.filter(x => x !== d); removeImages(d.id); drawList(); drawSide(); } }, 'Delete forever')] : null;
+        await q(sb.from('documents').delete().eq('id', d.id)); C.docs = C.docs.filter(x => x !== d); removeImages(d.id); removeFile(d); drawList(); drawSide(); } }, 'Delete forever')] : null;
     return el('article', { class: 'cr-card' + (trash ? ' cr-trashed' : ''), tabindex: trash ? null : '0', role: trash ? null : 'button', 'aria-label': trash ? null : 'Open ' + (d.title || 'Untitled'),
       onclick: trash ? null : () => openDoc(d.id), onkeydown: trash ? null : e => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); openDoc(d.id); } } },
       el('div', { class: 'cr-card-top' }, el('h3', {}, d.title || 'Untitled'), el('div', { class: 'cr-card-acts' }, pin, del)),
-      el('p', { class: 'cr-snip' }, snippet(d, s)),
+      d.file ? el('p', { class: 'cr-snip cr-filesnip' }, el('span', { class: 'cr-ftype cr-ft-' + fileKind(d.file).k }, fileKind(d.file).label), d.file.name) : el('p', { class: 'cr-snip' }, snippet(d, s)),
       el('p', { class: 'cr-card-meta' }, meta.join(' · ')),
       trash ? el('div', { class: 'cr-card-trash' }, el('span', {}, days ? `Deleted for good in ${plural(days, 'day')}` : 'Deleted for good today'), restore) : null,
       d.project_id && DS.proj && DS.proj.byId(d.project_id) ? DS.proj.chip({ project_id: d.project_id }, 'otag') : null);
@@ -371,7 +379,8 @@
       : C.sel === 'recent' ? 'Nothing edited in the last two weeks.' : 'No documents here yet.';
     listBox.replaceChildren(items.length ? el('div', { class: 'cr-cards' }, items.map(card))
       : el('div', { class: 'cr-empty' }, el('p', {}, empty),
-        C.sel !== 'trash' && !C.search ? el('button', { class: 'btn primary', type: 'button', onclick: () => templateDialog(curFolder()) }, '+ New document') : null));
+        C.sel !== 'trash' && !C.search ? el('div', { class: 'cr-empty-acts' }, el('button', { class: 'btn primary', type: 'button', onclick: () => templateDialog(curFolder()) }, '+ New document'),
+          el('button', { class: 'btn', type: 'button', onclick: pickUpload }, icon('upload', 16), ' Upload document')) : null));
     if (headBox) drawHead();
   }
   function navItem(key, label, ic, count) {
@@ -437,13 +446,136 @@
     const mob = el('select', { class: 'cr-mob-sel', 'aria-label': 'Folder', onchange: e => { C.sel = e.target.value; drawSide(); drawList(); } });
     const root = el('div', { class: 'cr' },
       el('div', { class: 'head' }, el('h1', {}, 'Create'),
-        el('button', { class: 'btn primary cr-new', type: 'button', onclick: () => templateDialog(curFolder()) }, '+ New document')),
-      el('p', { class: 'meta' }, 'Write anything: proposals, posts, letters, notes. Everything saves as you type and downloads as Word or PDF.'),
+        el('div', { class: 'cr-head-acts' },
+          el('button', { class: 'btn cr-up', type: 'button', onclick: pickUpload, title: 'Word, PDF or PowerPoint' }, icon('upload', 16), el('span', {}, 'Upload document')),
+          el('button', { class: 'btn primary cr-new', type: 'button', onclick: () => templateDialog(curFolder()) }, '+ New document'))),
+      el('p', { class: 'meta' }, 'Write anything: proposals, posts, letters, notes. Everything saves as you type and downloads as Word or PDF. Upload Word files to edit them here, and keep PDFs and PowerPoints alongside.'),
       el('div', { class: 'cr-wrap' }, sideBox,
         el('section', { class: 'cr-main' }, mob, headBox, el('div', { class: 'cr-tools' }, search, sort), listBox)));
     drawSide(); drawHead(); drawList();
     // drawSide fills the phone dropdown, which needs to be in the page; do it once more after mounting.
     requestAnimationFrame(drawSide);
+    return root;
+  }
+
+  /* ---------- uploading documents ----------
+     Word (.docx) becomes an editable document here (text, headings, lists, tables, links and pictures).
+     PDF, PowerPoint and old Word (.doc) files are kept as they are, in private storage, and listed with your documents:
+     a PDF opens in a viewer here; PowerPoint and .doc download to open in PowerPoint, Keynote or Word. */
+  const FILES = 'doc-files', MAX_FILE = 50 * 1024 * 1024;
+  const fileStore = () => sb.storage.from(FILES);
+  const KINDS = { pdf: ['pdf', 'PDF', 'application/pdf'], ppt: ['ppt', 'PowerPoint', 'application/vnd.ms-powerpoint'],
+    pptx: ['ppt', 'PowerPoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'], doc: ['doc', 'Word', 'application/msword'] };
+  const fileKind = f => { const k = KINDS[(f && f.ext) || ''] || ['file', 'File', 'application/octet-stream']; return { k: k[0], label: k[1], type: k[2] }; };
+  const fileSize = n => n >= 1048576 ? (n / 1048576).toFixed(n >= 10485760 ? 0 : 1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+  const extOf = name => ((name || '').match(/\.([a-z0-9]+)$/i) || [])[1]?.toLowerCase() || '';
+  const titleOf = name => (name || 'Untitled').replace(/\.[a-z0-9]+$/i, '').replace(/[_]+/g, ' ').trim().slice(0, 200) || 'Untitled';
+  async function removeFile(d) { if (d && d.file && d.file.path) { try { await fileStore().remove([d.file.path]); } catch (e) {} } }
+  function pickUpload() {
+    const input = el('input', { type: 'file', multiple: true, accept: '.docx,.doc,.pdf,.ppt,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-powerpoint,application/msword', style: 'display:none' });
+    input.addEventListener('change', () => { const files = [...input.files]; input.remove(); if (files.length) uploadFiles(files); });
+    document.body.append(input); input.click();
+  }
+  async function uploadFiles(files) {
+    const folderId = curFolder(), added = [];
+    for (const f of files) {
+      const ext = extOf(f.name);
+      if (!['docx', 'doc', 'pdf', 'ppt', 'pptx'].includes(ext)) { toast(`“${f.name}” isn’t a Word, PDF or PowerPoint file.`); continue; }
+      if (f.size > MAX_FILE) { toast(`“${f.name}” is over 50 MB. Try a smaller copy.`); continue; }
+      try { added.push(ext === 'docx' ? await importWord(f, folderId) : await keepFile(f, ext, folderId)); }
+      catch (e) { toast(`Couldn’t upload “${f.name}”. ${e && e.message ? e.message : 'Try again.'}`); }
+    }
+    if (!added.length) return;
+    if (added.length === 1) { toast(added[0].file ? 'Uploaded.' : 'Word file opened as an editable document.'); openDoc(added[0].id); }
+    else { toast(`Uploaded ${added.length} documents.`); rerender(); }
+  }
+  async function keepFile(f, ext, folderId) {
+    toast(`Uploading “${f.name}”…`);
+    const kind = fileKind({ ext }), path = `${DS.uid()}/${crypto.randomUUID()}.${ext}`;
+    // labelled with the right type from its extension (some browsers give .pptx no type, which storage would refuse)
+    const { error } = await fileStore().upload(path, new Blob([f], { type: kind.type }), { contentType: kind.type, upsert: false });
+    if (error) throw error;
+    let d;
+    try {
+      d = await q(sb.from('documents').insert({ user_id: DS.uid(), title: titleOf(f.name), folder_id: folderId || null, html: null, plain: '', word_count: 0,
+        file: { path, name: f.name.slice(0, 200), size: f.size, type: kind.type, ext } }).select(LIST_COLS).single());
+    } catch (e) { fileStore().remove([path]).catch(() => {}); throw e; }
+    C.docs.unshift(d);
+    return d;
+  }
+  async function importWord(f, folderId) {
+    toast(`Opening “${f.name}”…`);
+    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.13.0/mammoth.browser.min.js');
+    const d = await q(sb.from('documents').insert({ user_id: DS.uid(), title: titleOf(f.name), folder_id: folderId || null, html: '<p></p>',
+      page: { size: 'A4', margins: 'normal', orient: 'portrait' } }).select(LIST_COLS).single());
+    try {
+      // pictures go to the same private storage as pictures you add yourself
+      const toImg = window.mammoth.images.imgElement(async image => {
+        try {
+          const b64 = await image.read('base64'), bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+          const blob = new Blob([bytes], { type: image.contentType });
+          const { blob: b, ext, type } = await prepImage(blob);
+          const path = `${DS.uid()}/${d.id}/${crypto.randomUUID()}.${ext}`;
+          const { error } = await imgStore().upload(path, b, { contentType: type, upsert: false });
+          if (error) throw error;
+          return { src: '', 'data-path': path };
+        } catch (e) { return { src: '', 'data-skip': '1' }; } // a picture type browsers can't read (e.g. EMF)
+      });
+      const res = await window.mammoth.convertToHtml({ arrayBuffer: await f.arrayBuffer() }, { convertImage: toImg });
+      const box = document.createElement('div'); box.innerHTML = res.value || '<p></p>';
+      box.querySelectorAll('img[data-skip], img:not([data-path])').forEach(i => i.remove());
+      box.querySelectorAll('img[data-path]').forEach(i => { i.setAttribute('width', '100%'); });
+      const html = box.innerHTML.trim() || '<p></p>', plain = (box.textContent || '').replace(/\s+/g, ' ').trim();
+      const row = { html, plain: plain.slice(0, 200000), word_count: plain ? plain.split(' ').length : 0 };
+      await q(sb.from('documents').update(row).eq('id', d.id));
+      Object.assign(d, row);
+    } catch (e) {
+      await sb.from('documents').delete().eq('id', d.id); removeImages(d.id);
+      throw new Error('That Word file couldn’t be read. If it’s an older .doc or password-protected, save it as .docx and try again.');
+    }
+    C.docs.unshift(d);
+    return d;
+  }
+  // An uploaded file: rename, move, pin; PDFs show in a viewer here, the rest download.
+  async function fileView(doc) {
+    const kind = fileKind(doc.file);
+    const back = () => { C.open = null; if (frameUrl) URL.revokeObjectURL(frameUrl); refresh(); window.scrollTo(0, 0); };
+    let frameUrl = null;
+    const download = async () => {
+      const { data, error } = await fileStore().createSignedUrl(doc.file.path, 300, { download: doc.file.name });
+      if (error || !data) { toast('Couldn’t download it just now. Try again.'); return; }
+      const a = el('a', { href: data.signedUrl, download: doc.file.name, rel: 'noopener' }); document.body.append(a); a.click(); a.remove();
+    };
+    const title = el('input', { class: 'cr-title cr-ftitle', value: doc.title || 'Untitled', maxlength: '200', 'aria-label': 'Title',
+      onchange: async () => { const t = title.value.trim() || 'Untitled'; if (t === doc.title) return; try { await patchDoc(doc, { title: t }); toast('Renamed.'); } catch (e) {} } });
+    const body = el('div', { class: 'cr-fbody' });
+    const root = el('div', { class: 'cr cr-fview' },
+      el('div', { class: 'cr-fbar' },
+        el('button', { class: 'btn cr-small cr-back', type: 'button', onclick: back }, icon('back', 16), ' Documents'),
+        el('span', { class: 'cr-ftype cr-ft-' + kind.k }, kind.label),
+        title,
+        el('div', { class: 'cr-facts' },
+          folderSelect(doc.folder_id, async v => { try { await patchDoc(doc, { folder_id: v }); toast(v ? 'Moved.' : 'Moved out of the folder.'); } catch (e) {} }),
+          el('button', { class: 'cr-ic' + (doc.pinned ? ' on' : ''), type: 'button', title: doc.pinned ? 'Unpin' : 'Pin to the top', 'aria-pressed': String(!!doc.pinned), 'aria-label': 'Pin',
+            onclick: async e => { await patchDoc(doc, { pinned: !doc.pinned }); e.currentTarget.classList.toggle('on', doc.pinned); e.currentTarget.setAttribute('aria-pressed', String(doc.pinned)); } }, icon('star', 17)),
+          el('button', { class: 'btn cr-small', type: 'button', onclick: download }, icon('download', 16), ' Download'),
+          el('button', { class: 'btn danger cr-small', type: 'button', onclick: async () => { await trashDoc(doc); back(); } }, icon('trash', 16), ' Move to Trash'))),
+      el('p', { class: 'meta cr-fmeta' }, `${doc.file.name} · ${fileSize(doc.file.size)} · uploaded ${when(doc.created_at)}`),
+      body);
+    if (kind.k === 'pdf') {
+      body.append(el('p', { class: 'meta' }, 'Opening…'));
+      fileStore().download(doc.file.path).then(({ data, error }) => {
+        if (error || !data) { body.replaceChildren(el('p', { class: 'meta' }, 'Couldn’t open the PDF. Try Download.')); return; }
+        frameUrl = URL.createObjectURL(new Blob([data], { type: 'application/pdf' }));
+        body.replaceChildren(el('iframe', { class: 'cr-pdf', src: frameUrl, title: doc.title || 'PDF' }));
+      });
+    } else {
+      body.append(el('div', { class: 'cr-fcard' },
+        el('span', { class: 'cr-ftype big cr-ft-' + kind.k }, kind.label),
+        el('p', {}, kind.k === 'ppt' ? 'Browsers can’t show PowerPoint files. Download it to open in PowerPoint or Keynote.'
+          : 'This is an older Word (.doc) file, kept as it is. Download it to open in Word or Pages, or save it as .docx and upload that to edit it here.'),
+        el('button', { class: 'btn primary', type: 'button', onclick: download }, icon('download', 16), ' Download')));
+    }
     return root;
   }
 
@@ -469,6 +601,7 @@
     const listRow = C.docs.find(x => x.id === id);
     const doc = listRow ? Object.assign(listRow, d) : d;
     if (!listRow) C.docs.unshift(doc);
+    if (doc.file) return fileView(doc);
 
     // A copy kept on this device until the save reaches the server; use it if it is newer.
     const LKEY = 'ds_doc_local_' + id;
@@ -479,6 +612,7 @@
       content = local.content; if (local.title != null) doc.title = local.title; if (local.page) doc.page = local.page; restored = true;
     } else if (local) store(LKEY, null);
     if (content && typeof content === 'object') content = await signContent(content);
+    else if (typeof content === 'string' && content.includes('data-path')) content = await signHtml(content); // e.g. an imported Word file
 
     // A version is taken every 10 minutes while you write, and when you leave the document.
     const E = { doc, dirty: false, saving: null, timer: null, ltimer: null, failed: false,
