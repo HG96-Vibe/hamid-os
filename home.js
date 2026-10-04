@@ -473,14 +473,15 @@
     if (state.view === 'home') b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   }
 
-  // Re-sort Today's rows in place (starred first, then the usual order) and let each row glide to its new spot.
+  // Re-sort Today's rows in place (still to do first, starred first within that, then the usual order) and let each row glide to its new spot.
   const calm = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   function glide(moved) {
     const list = moved.parentNode; if (!list) return;
     const rows = [...list.querySelectorAll(':scope > .td-row')];
     const before = new Map(rows.map(r => [r, r.getBoundingClientRect().top]));
     const starred = r => (r.querySelector('.hm-star.on') ? 1 : 0), pos = r => parseFloat(r.dataset.pos) || 0;
-    const sorted = rows.slice().sort((a, b) => starred(b) - starred(a) || pos(a) - pos(b) || rows.indexOf(a) - rows.indexOf(b));
+    const finished = r => (r.classList.contains('s-done') || r.classList.contains('s-dropped') ? 1 : 0); // finished tasks stay at the bottom
+    const sorted = rows.slice().sort((a, b) => finished(a) - finished(b) || starred(b) - starred(a) || pos(a) - pos(b) || rows.indexOf(a) - rows.indexOf(b));
     const after = rows[rows.length - 1].nextSibling;
     sorted.forEach(r => list.insertBefore(r, after));
     if (calm || !moved.animate) return;

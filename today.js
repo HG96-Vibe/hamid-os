@@ -12,9 +12,25 @@
   let draft = null; // latest typed notes, so a page refresh mid-save never shows an older copy
   const toggle = async t => {
     const done = t.status !== 'done';
+    const before = rowTops(); // where each task sat, so the list can glide into its new order
     await setTask(t.id, { status: done ? 'done' : 'open', completed_at: done ? new Date().toISOString() : null });
-    refresh();
+    await refresh();
+    slide(before, t.id);
   };
+  // Finished tasks (done or dropped) sit at the bottom, so what still needs doing stays at the top.
+  const finished = t => t.status === 'done' || t.status === 'dropped';
+  const rowTops = () => new Map([...document.querySelectorAll('.td-list > .td-row[data-oid]')].map(r => [r.dataset.oid, r.getBoundingClientRect().top]));
+  const calm = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function slide(before, movedId) {
+    if (calm) return;
+    document.querySelectorAll('.td-list > .td-row[data-oid]').forEach(r => {
+      const was = before.get(r.dataset.oid); if (was == null || !r.animate) return;
+      const z = r.offsetHeight ? r.getBoundingClientRect().height / r.offsetHeight : 1; // page zoom
+      const dy = (was - r.getBoundingClientRect().top) / (z || 1);
+      if (Math.abs(dy) < 1) return;
+      r.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }], { duration: r.dataset.oid === movedId ? 650 : 450, easing: 'cubic-bezier(.2,.7,.2,1)' });
+    });
+  }
 
   async function viewToday() {
     const d = state.cursor, ws = weekStart(d), ms = monthStart(addDays(ws, 3));
@@ -28,8 +44,8 @@
 
     /* task strips */
     const list = el('div', { class: 'td-list' });
-    // Starred (top 5) tasks sit at the top; otherwise the usual order is kept.
-    tasks.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+    // Still to do first, finished at the bottom; within each, starred (top 5) tasks lead; otherwise the usual order is kept.
+    tasks.sort((a, b) => (finished(a) ? 1 : 0) - (finished(b) ? 1 : 0) || (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
     tasks.forEach(t => {
       const parent = t.parent_id && weekTitle[t.parent_id];
       const focus = (t.focus_sessions || []).reduce((a, x) => a + (x.minutes || 0), 0);
