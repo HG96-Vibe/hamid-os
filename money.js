@@ -57,16 +57,18 @@
     if (!cats.length) cats = await seedCats(id);
     // your own list of direct debits and bills (Personal); a record only, never counted in money in / out
     // ... and loans / lending with their repayments (also a record only)
-    let planned = [], debts = [], debtPays = [];
+    let planned = [], debts = [], debtPays = [], ticked = [];
     if (isPersonal(id)) {
-      [planned, debts, debtPays] = await Promise.all([
+      [planned, debts, debtPays, ticked] = await Promise.all([
         q(sb.from('money_planned').select('*').eq('book_id', id).order('next_on')).catch(() => []),
         q(sb.from('money_debts').select('*').eq('book_id', id).order('started_on')).catch(() => []),
-        q(sb.from('money_debt_payments').select('*').order('paid_on').limit(20000)).catch(() => [])]);
+        q(sb.from('money_debt_payments').select('*').order('paid_on').limit(20000)).catch(() => []),
+        // direct debits ticked as paid: each is a money-out entry tagged dd|<debit id>|<date it was due>
+        q(sb.from('money_tx').select('*').eq('book_id', id).like('import_key', 'dd|%').gte('occurred_on', addDays(today(), -800)).limit(20000)).catch(() => [])]);
       debtPays = debtPays.filter(x => debts.some(d => d.id === x.debt_id));
     }
     if (M.book !== id) return;
-    Object.assign(M, { cats, rules, tx, planned, debts, debtPays });
+    Object.assign(M, { cats, rules, tx, planned, debts, debtPays, ddPaid: new Map(ticked.map(t => [t.import_key, t])) });
   }
   // a new book starts with sensible categories (yours to rename, budget or delete)
   async function seedCats(id) {
@@ -365,7 +367,9 @@
   async function del(t) {
     if (!confirm(`Delete “${t.description}” (${gbp(t.amount_pence, { plus: true })})?`)) return;
     try { await q(sb.from('money_tx').delete().eq('id', t.id)); } catch (e) { return; }
-    M.tx = M.tx.filter(x => x !== t); toast('Deleted.'); draw();
+    M.tx = M.tx.filter(x => x !== t);
+    if (t.import_key && M.ddPaid && M.ddPaid.has(t.import_key)) M.ddPaid.delete(t.import_key);
+    toast('Deleted.'); draw();
   }
 
   /* ---------- direct debits & bills: a list you keep, separate from money in and out ---------- */
@@ -385,12 +389,42 @@
     while (nth(p, k) < t0 && k < 2000) k++;
     return nth(p, k);
   }
-  // how much of it still goes out between today and the end of this month
+  // the payment the tick is for: the latest one on or before today (it stays ticked until the next one
+  // comes round), or the first one if none has come yet
+  function cycleOf(p) {
+    const t0 = today();
+    if (p.cadence === 'once' || nth(p, 0) > t0) return p.next_on;
+    let k = 0;
+    while (nth(p, k + 1) <= t0 && k < 2000) k++;
+    return nth(p, k);
+  }
+  const afterCycle = p => { if (p.cadence === 'once') return null; const c = cycleOf(p); let k = 0; while (nth(p, k) <= c && k < 2000) k++; return nth(p, k); };
+  const ddKey = (p, d) => `dd|${p.id}|${d}`;
+  const isPaid = (p, d) => !!(M.ddPaid && M.ddPaid.has(ddKey(p, d)));
+  // how much of it still goes out between today and the end of this month (leaving out ones ticked as paid)
   function leftThisMonth(p) {
     const t0 = today(), end = monthEnd(monthStart(t0)); let n = 0;
-    if (p.cadence === 'once') return p.next_on >= t0 && p.next_on <= end ? p.amount_pence : 0;
-    for (let k = 0, d = nth(p, 0); d <= end && k < 2000; d = nth(p, ++k)) if (d >= t0) n += p.amount_pence;
+    if (p.cadence === 'once') return p.next_on >= t0 && p.next_on <= end && !isPaid(p, p.next_on) ? p.amount_pence : 0;
+    for (let k = 0, d = nth(p, 0); d <= end && k < 2000; d = nth(p, ++k)) if (d >= t0 && !isPaid(p, d)) n += p.amount_pence;
     return n;
+  }
+  // tick: it's been paid, so it goes into money out (on the day it was due, or today if paid early); untick takes it out again
+  async function togglePaid(p) {
+    const d = cycleOf(p), key = ddKey(p, d), had = M.ddPaid.get(key);
+    if (had) {
+      try { await q(sb.from('money_tx').delete().eq('id', had.id)); } catch (e) { return; }
+      M.ddPaid.delete(key); M.tx = M.tx.filter(x => x.id !== had.id);
+      toast(`${p.name}: unticked and taken out of money out.`); draw(); return;
+    }
+    const outCats = catsOf('out').map(c => c.name);
+    const category = guessCat(p.name, false) || ['Bills', 'Subscriptions'].find(c => outCats.includes(c)) || null;
+    let row;
+    try { row = await q(sb.from('money_tx').insert({ user_id: DS.uid(), book_id: M.book, occurred_on: d <= today() ? d : today(), amount_pence: -p.amount_pence,
+      description: p.name.slice(0, 300), category, note: 'Direct debit, ticked as paid', source: 'manual', import_key: key }).select().single()); } catch (e) { return; }
+    M.ddPaid.set(key, row);
+    if (row.occurred_on >= addMonths(M.month, -5) && row.occurred_on <= monthEnd(M.month)) { M.tx.push(row); sortTx(); }
+    toast(`${p.name} paid: ${gbp(-p.amount_pence)} added to money out${category ? ' · ' + category : ''}.`);
+    draw();
   }
   function dueLabel(d) {
     const t0 = today(), days = Math.round((Date.parse(d) - Date.parse(t0)) / 864e5);
@@ -400,8 +434,9 @@
     return fmt(d, { weekday: 'short', day: 'numeric', month: 'short' }) + (days <= 14 ? ` · in ${days} days` : '');
   }
   function plannedCard() {
-    const list = (M.planned || []).map(p => ({ p, due: nextDue(p) }))
-      .sort((a, b) => ((a.due < today()) - (b.due < today())) || (a.due < b.due ? -1 : a.due > b.due ? 1 : 0));
+    // still to pay first (by date), then the ones ticked as paid, like finished tasks on Today
+    const list = (M.planned || []).map(p => { const due = cycleOf(p); return { p, due, paid: isPaid(p, due) }; })
+      .sort((a, b) => (a.paid - b.paid) || (a.due < b.due ? -1 : a.due > b.due ? 1 : 0));
     const monthly = M.planned.reduce((a, p) => a + p.amount_pence * PER_MONTH[p.cadence], 0);
     const left = M.planned.reduce((a, p) => a + leftThisMonth(p), 0);
     const name = el('input', { class: 'field', id: 'mn-pname', maxlength: '80', placeholder: 'e.g. Council tax, Gym, Phone', 'aria-label': 'Name' });
@@ -422,13 +457,17 @@
     return el('section', { class: 'mn-card mn-planned' },
       el('div', { class: 'mn-ch' }, el('h3', {}, 'Direct debits & bills'),
         M.planned.length ? el('span', { class: 'mn-psum' }, amt(Math.round(monthly), { whole: true }), ' a month') : null),
-      el('p', { class: 'mn-pnote' }, 'Your own record of what’s going out. It doesn’t count towards money in or out.'),
+      el('p', { class: 'mn-pnote' }, 'Tick one when it’s been paid and it’s added to money out.'),
       M.planned.length ? el('p', { class: 'mn-total' }, left ? [amt(left), ' still to go out this month'] : 'Nothing more to go out this month.') : null,
-      list.length ? el('div', { class: 'mn-plist' }, list.map(({ p, due }) => el('div', { class: 'mn-prow' + (due < today() ? ' past' : '') },
+      list.length ? el('div', { class: 'mn-plist' }, list.map(({ p, due, paid }) => el('div', { class: 'mn-prow' + (paid ? ' paid' : due < today() ? ' late' : '') },
+        el('button', { type: 'button', class: 'mn-ptick', 'aria-pressed': String(paid), title: paid ? 'Paid. Click to untick' : 'Tick when it’s been paid',
+          'aria-label': paid ? `${p.name} is paid. Untick` : `Mark ${p.name} as paid`, onclick: () => togglePaid(p) }, paid ? '✓' : ''),
         el('button', { type: 'button', class: 'mn-pn', title: 'Edit', onclick: () => plannedDialog(p) }, el('b', {}, p.name), p.note ? el('small', {}, p.note) : null),
-        el('span', { class: 'mn-pwhen' }, el('span', { class: 'mn-kind' }, CADENCE[p.cadence]), el('small', {}, dueLabel(due))),
+        el('span', { class: 'mn-pwhen' }, el('span', { class: 'mn-kind' }, CADENCE[p.cadence]),
+          el('small', {}, paid ? `Paid ${fmt(due, { day: 'numeric', month: 'short' })}` + (afterCycle(p) ? ` · next ${fmt(afterCycle(p), { day: 'numeric', month: 'short' })}` : '')
+            : due < today() ? `Was due ${fmt(due, { day: 'numeric', month: 'short' })} · not ticked` : dueLabel(due))),
         amt(p.amount_pence, {}, 'mn-pamt'),
-        el('button', { type: 'button', class: 'mn-del', title: 'Delete', 'aria-label': `Delete ${p.name}`, onclick: () => removePlanned(p) }, icon('trash', 15))))) :
+        el('button', { type: 'button', class: 'mn-del', title: 'Delete', 'aria-label': `Delete ${p.name} from direct debits`, onclick: () => removePlanned(p) }, icon('trash', 15))))) :
         el('p', { class: 'mn-empty' }, 'Note down your direct debits, standing orders and bills, with how much and when they go out.'),
       el('form', { class: 'mn-padd', onsubmit: add }, name, amount, cad, date, note, el('button', { type: 'submit', class: 'btn primary' }, icon('plus', 14), ' Add')));
   }
@@ -729,8 +768,20 @@
           existing = new Set(have.map(h => h.import_key));
         } catch (e) {}
       }
-      const fresh = tx.filter(t => !existing.has(t.import_key));
       const dates = tx.map(t => t.occurred_on).sort();
+      // a direct debit you ticked as paid is already in money out: the same amount within 5 days on the statement is that payment
+      const dupDD = new Set();
+      if (tx.length) {
+        let ticked = [];
+        try { ticked = await q(sb.from('money_tx').select('id,occurred_on,amount_pence').eq('book_id', into).like('import_key', 'dd|%').gte('occurred_on', addDays(dates[0], -5)).lte('occurred_on', addDays(dates[dates.length - 1], 5)).limit(5000)); } catch (e) {}
+        const used = new Set();
+        for (const t of tx) {
+          if (existing.has(t.import_key)) continue;
+          const m = ticked.find(x => !used.has(x.id) && x.amount_pence === t.amount_pence && Math.abs(Date.parse(x.occurred_on) - Date.parse(t.occurred_on)) <= 5 * 864e5);
+          if (m) { used.add(m.id); dupDD.add(t.import_key); }
+        }
+      }
+      const fresh = tx.filter(t => !existing.has(t.import_key) && !dupDD.has(t.import_key));
       const ins = tx.filter(t => t.amount_pence > 0).length, outs = tx.length - ins;
       body.replaceChildren(...[
         el('div', { class: 'mn-map' },
@@ -741,11 +792,12 @@
         two ? null : el('label', { class: 'ls-check', for: 'mn-flip' }, flip, el('span', {}, 'My bank shows spending as positive numbers (swap money in and out)')),
         tx.length ? el('p', { class: 'mn-sum' }, el('b', {}, `${tx.length} payments`), ` from ${fmt(dates[0], { day: 'numeric', month: 'short', year: 'numeric' })} to ${fmt(dates[dates.length - 1], { day: 'numeric', month: 'short', year: 'numeric' })}: ${outs} out, ${ins} in. `,
           existing.size > 0 && fresh.length < tx.length ? el('span', {}, `${tx.length - fresh.length} already imported, so `, el('b', {}, `${fresh.length} new`), '. ') : null,
+          dupDD.size ? el('span', {}, `${dupDD.size} already ticked off as direct debit${dupDD.size === 1 ? '' : 's'}, so left out. `) : null,
           skipped.length ? el('span', { class: 'mn-warn' }, `${skipped.length} line${skipped.length === 1 ? '' : 's'} skipped (no date or amount).`) : null)
           : el('p', { class: 'mn-warn' }, 'No payments found with these columns. Check the columns above match your file.'),
         tx.length ? el('div', { class: 'mn-prev' }, el('table', {},
           el('thead', {}, el('tr', {}, el('th', {}, 'Date'), el('th', {}, 'Description'), el('th', {}, 'Category'), el('th', { class: 'num' }, 'Amount'))),
-          el('tbody', {}, tx.slice(0, 8).map(t => el('tr', { class: existing.has(t.import_key) ? 'dup' : '' },
+          el('tbody', {}, tx.slice(0, 8).map(t => el('tr', { class: existing.has(t.import_key) || dupDD.has(t.import_key) ? 'dup' : '' },
             el('td', {}, fmt(t.occurred_on, { day: 'numeric', month: 'short' })), el('td', {}, t.description),
             el('td', {}, guessCat(t.description, t.amount_pence > 0) || '—'), el('td', { class: 'num' }, amt(t.amount_pence, { plus: true }, t.amount_pence > 0 ? 'in' : 'out'))))))) : null,
         tx.length > 8 ? el('p', { class: 'meta' }, `…and ${tx.length - 8} more.`) : null,
