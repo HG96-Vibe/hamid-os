@@ -1021,13 +1021,14 @@ async function viewSettings() {
     const fd = new FormData(form);
     const fm = Math.min(180, Math.max(5, parseInt(fd.get('focus_minutes'), 10) || 45));
     await q(sb.from('settings').update({ morning_on: fd.has('morning_on'), morning_time: fd.get('morning_time') || '08:45', evening_on: fd.has('evening_on'), evening_time: fd.get('evening_time') || '17:30',
-      weekdays_only: fd.has('weekdays_only'), backup_nudge: fd.has('backup_nudge'), focus_minutes: fm, tz: TZ, updated_at: new Date().toISOString() }).eq('user_id', uid()));
+      weekdays_only: fd.has('weekdays_only'), backup_nudge: fd.has('backup_nudge'), alerts_on: fd.has('alerts_on'), focus_minutes: fm, tz: TZ, updated_at: new Date().toISOString() }).eq('user_id', uid()));
     await loadSettings(); toast('Settings saved.');
   } },
     el('label', { class: 'line' }, chk('morning_on', s.morning_on), el('span', {}, 'Morning nudge to plan the day at'), tim('morning_time', s.morning_time)),
     el('label', { class: 'line' }, chk('evening_on', s.evening_on), el('span', {}, 'Evening nudge to close out the day at'), tim('evening_time', s.evening_time)),
     el('label', { class: 'line' }, chk('weekdays_only', s.weekdays_only), el('span', {}, 'Weekdays only')),
     el('label', { class: 'line' }, chk('backup_nudge', s.backup_nudge), el('span', {}, 'Sunday morning reminder to download a backup')),
+    el('label', { class: 'line' }, chk('alerts_on', s.alerts_on !== false), el('span', {}, 'Heads-ups: direct debits due tomorrow, budgets nearly used, loans, milestones and follow-ups due, and streaks to keep going')),
     el('label', { class: 'line' }, el('span', {}, 'Focus block length'), el('input', { class: 'field', type: 'number', name: 'focus_minutes', min: '5', max: '180', step: '5', value: String(s.focus_minutes), style: 'width:90px' }), el('span', {}, 'minutes')),
     el('p', { class: 'meta', style: 'margin:0' }, `Times use your time zone (${TZ}). The evening nudge is skipped if you\u2019ve already closed out the day. Task reminders are set from inside each task.`),
     el('div', {}, el('button', { class: 'btn primary', type: 'submit' }, 'Save settings')));
@@ -1067,7 +1068,7 @@ function download(name, text, type) {
 }
 async function exportJson() {
   const out = { app: 'Daily Sheet', exported_at: new Date().toISOString() };
-  for (const t of ['tasks', 'task_notes', 'task_links', 'reviews', 'wins', 'focus_sessions', 'inbox', 'settings', 'projects', 'doc_folders', 'documents', 'document_versions'])
+  for (const t of ['tasks', 'task_notes', 'task_links', 'reviews', 'wins', 'focus_sessions', 'inbox', 'settings', 'projects', 'doc_folders', 'documents', 'document_versions', 'task_repeats', 'people', 'people_notes', 'project_milestones', 'savings_goals', 'briefs'])
     out[t] = await fetchAll(() => sb.from(t).select('*').order(t === 'settings' ? 'user_id' : 'id'));
   download(`daily-sheet-backup-${today()}.json`, JSON.stringify(out, null, 2), 'application/json');
   toast('Backup downloaded.');

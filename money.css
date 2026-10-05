@@ -406,3 +406,36 @@ html.light .mn-findf,html.light .mn-found{box-shadow:0 6px 18px rgba(60,50,20,.1
   .mn-side{display:block;margin-bottom:12px}
   .mn-side .mn-sbtn{display:none}
 }
+
+/* snap a receipt */
+.mn-snap{flex:none;width:38px;height:38px;border-radius:10px;border:1px solid var(--mn-line,#d9d9e6);background:#fff;color:#4338ca;display:grid;place-items:center;cursor:pointer;padding:0}
+.mn-snap:hover{border-color:#4338ca}
+.mn-snap.busy{animation:mn-pulse 1s ease-in-out infinite alternate;cursor:progress}
+@keyframes mn-pulse{from{opacity:1}to{opacity:.45}}
+@media (prefers-reduced-motion:reduce){.mn-snap.busy{animation:none;opacity:.6}}
+/* find subscriptions */
+.mn-findsubs{margin-left:auto;font-size:13px;color:#4338ca;white-space:nowrap}
+.mn-card.folded>.mn-ch .mn-findsubs{display:none}
+.mn-subs{display:grid;gap:8px}
+.mn-sub{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:6px 12px;align-items:center;background:#fff;border:1px solid #ececf3;border-radius:12px;padding:10px 12px}
+.mn-sub b{display:block;font:700 14.5px var(--ui);color:#1e1b4b}
+.mn-sub small{color:#5b5f86;font-size:12.5px}
+.mn-subamt{font:800 15px var(--ui);color:#1e1b4b}
+.mn-subacts{display:flex;gap:6px}
+.mn-subsdlg .btn:not(.primary){background:#fff;color:#1e1b4b;border-color:#d9d9e6}
+@media (max-width:560px){.mn-sub{grid-template-columns:minmax(0,1fr) auto}.mn-subacts{grid-column:1/-1}}
+/* savings goals */
+.mn-goallist{display:grid;gap:10px;margin:6px 0 10px}
+.mn-goal{background:#fff;border:1px solid #ececf3;border-radius:12px;padding:10px 12px;display:grid;gap:6px}
+.mn-goalh{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+.mn-goalh b{font:700 15px var(--ui);color:#1e1b4b;margin-right:auto}
+.mn-goalv{font:800 15px var(--ui);color:#047857}
+.mn-goalt{font-size:13px;color:#5b5f86}
+.mn-goalbar{height:9px;border-radius:5px;background:#ececf3;overflow:hidden}
+.mn-goalbar i{display:block;height:100%;border-radius:5px;background:linear-gradient(90deg,#10b981,#047857)}
+.mn-goal.done .mn-goalbar i{background:linear-gradient(90deg,#f59e0b,#d97706)}
+.mn-goalf{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.mn-goalf small{color:#5b5f86;font-size:12.5px;margin-right:auto}
+.mn-goalf .mn-goall{margin-right:0;color:#4338ca}
+.mn-goalf .btn{background:#fff;color:#1e1b4b;border-color:#d9d9e6}
+.mn-gadd select{max-width:220px}

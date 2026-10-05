@@ -32,10 +32,62 @@
   }
 
   // the ↻ chip on a task that repeats
+  /* ---------- streaks ----------
+     Each copy of a repeating task is one day it was due. The streak is the run of done copies up to the latest
+     finished day (today's copy only counts once it's done; while it's still open the streak isn't broken yet). */
+  let ST = {}, stAt = 0;
+  async function streaks(force) {
+    if (!force && Date.now() - stAt < 3000) return ST;
+    const from = addDaysLocal(today(), -370);
+    const rows = [];
+    for (let i = 0; ; i += 1000) {
+      const { data, error } = await sb.from('tasks').select('repeat_id,period_start,status').not('repeat_id', 'is', null).gte('period_start', from).order('period_start').range(i, i + 999);
+      if (error || !data) break;
+      rows.push(...data); if (data.length < 1000) break;
+    }
+    const by = {};
+    rows.forEach(r => (by[r.repeat_id] ||= []).push(r));
+    const t0 = today(), out = {};
+    for (const [id, list] of Object.entries(by)) {
+      list.sort((a, b) => (a.period_start < b.period_start ? -1 : 1));
+      let best = 0, run = 0;
+      list.forEach(r => { if (r.status === 'done') { run++; best = Math.max(best, run); } else if (r.period_start < t0) run = 0; });
+      // current: walk back from the latest copy; an open copy today doesn't break it
+      let cur = 0;
+      for (let i = list.length - 1; i >= 0; i--) {
+        const r = list[i];
+        if (r.status === 'done') cur++;
+        else if (r.period_start === t0 && i === list.length - 1) continue;
+        else break;
+      }
+      const last30 = list.filter(r => r.period_start > addDaysLocal(t0, -30) && (r.period_start < t0 || r.status === 'done'));
+      const done30 = last30.filter(r => r.status === 'done').length;
+      out[id] = { cur, best, rate: last30.length ? Math.round(done30 / last30.length * 100) : null, due30: last30.length, done30,
+        days: Object.fromEntries(list.map(r => [r.period_start, r.status])), todayOpen: list.some(r => r.period_start === t0 && r.status === 'open') };
+    }
+    ST = out; stAt = Date.now();
+    return ST;
+  }
+  const addDaysLocal = (d, n) => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + n); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; };
+  const flame = st => st && st.cur >= 2 ? ` · 🔥${st.cur}` : '';
+  // a year of ticks: one square per day, done / missed / not due
+  function yearGrid(st, weeks = 26) {
+    const t0 = today(), end = addDaysLocal(t0, 7 - (((new Date(t0 + 'T12:00:00').getDay() + 6) % 7) + 1));
+    const start = addDaysLocal(end, -(weeks * 7 - 1));
+    const cells = [];
+    for (let d = start; d <= end; d = addDaysLocal(d, 1)) {
+      const s = st && st.days[d];
+      const cls = d > t0 ? 'f' : s === 'done' ? 'y' : s ? (d === t0 ? 'o' : 'n') : '';
+      cells.push(el('i', { class: cls, title: `${d}${s === 'done' ? ' · done' : s ? (d === t0 ? ' · today' : ' · missed') : ''}` }));
+    }
+    return el('div', { class: 'rp-year', role: 'img', 'aria-label': st ? `Last ${weeks} weeks: ${Object.values(st.days).filter(v => v === 'done').length} days done` : 'No days yet' }, cells);
+  }
+
   function chip(t, rp) {
     if (!t.repeat_id) return null;
-    return el('button', { type: 'button', class: 'td-chip rp-chip', title: rp ? `Repeats: ${label(rp.days)}. Click to change.` : 'A repeating task. Click to change.',
-      onclick: e => { e.stopPropagation(); open({ focus: t.repeat_id }); } }, '↻ ' + (rp ? label(rp.days) : 'Repeats'));
+    const st = ST[t.repeat_id];
+    return el('button', { type: 'button', class: 'td-chip rp-chip', title: (rp ? `Repeats: ${label(rp.days)}.` : 'A repeating task.') + (st && st.cur ? ` Streak: ${st.cur} in a row (best ${st.best}).` : '') + ' Click to change.',
+      onclick: e => { e.stopPropagation(); open({ focus: t.repeat_id }); } }, '↻ ' + (rp ? label(rp.days) : 'Repeats') + flame(st));
   }
 
   function dayPicker(days, onChange) {
@@ -100,7 +152,7 @@
       el('div', { class: 'actions' }, addBtn));
 
     async function load() {
-      const rows = await q(sb.from('task_repeats').select('*').order('position').order('created_at'));
+      const [rows] = await Promise.all([q(sb.from('task_repeats').select('*').order('position').order('created_at')), streaks(true)]);
       list.replaceChildren(...(rows.length ? rows.map(row) : [el('li', { class: 'rp-empty' }, 'Nothing repeats yet. Add the things you do every day, like checking emails or the gym.')]));
       if (opts.focus) { const li = list.querySelector(`[data-rid="${opts.focus}"]`); if (li) { li.classList.add('rp-hit'); li.scrollIntoView({ block: 'nearest' }); } opts.focus = null; }
     }
@@ -118,6 +170,12 @@
       const pname = r.project_id && DS.proj && DS.proj.byId ? (DS.proj.byId(r.project_id) || {}).name : null;
       const summary = () => [label(r.days), pname, r.paused ? 'Paused' : null].filter(Boolean).join(' · ');
       const sub = el('small', { class: 'rp-sub' }, summary());
+      const st = ST[r.id];
+      const stats = st ? el('div', { class: 'rp-stats' },
+        el('span', { class: 'rp-fire' + (st.cur >= 2 ? ' on' : '') }, st.cur ? `🔥 ${st.cur} in a row` : 'No streak yet'),
+        el('span', {}, `Best ${st.best}`),
+        st.rate != null ? el('span', {}, `${st.rate}% of the last 30 days (${st.done30}/${st.due30})`) : null,
+        st.todayOpen && st.cur >= 2 ? el('span', { class: 'rp-nudge' }, 'Still to do today: keep it going') : null) : null;
       const li = el('li', { class: 'rp-row' + (r.paused ? ' paused' : ''), 'data-rid': r.id },
         el('div', { class: 'rp-top' }, el('span', { class: 'rp-ic', 'aria-hidden': 'true' }, '↻'), name,
           el('button', { type: 'button', class: 'btn rp-pause', onclick: async () => { await patch(r, { paused: !r.paused }, r.paused ? `“${r.title}” resumed.` : `“${r.title}” paused. It won’t appear until you resume it.`); li.classList.toggle('paused', r.paused); li.querySelector('.rp-pause').textContent = r.paused ? 'Resume' : 'Pause'; sub.textContent = summary(); } }, r.paused ? 'Resume' : 'Pause'),
@@ -125,7 +183,7 @@
             if (!confirm(`Stop repeating “${r.title}”? Copies already on your days stay as normal tasks.`)) return;
             await q(sb.from('task_repeats').delete().eq('id', r.id)); changed = true; toast('Stopped repeating.'); load();
           } }, 'Delete')),
-        sub, dp);
+        sub, stats, st ? yearGrid(st) : null, dp);
       return li;
     }
 
@@ -141,7 +199,7 @@
     if (ft || !focusId) titleIn.focus();
   }
 
-  DS.repeats = { ensure, chip, open, label, create, dayPicker };
+  DS.repeats = { ensure, chip, open, label, create, dayPicker, streaks, yearGrid };
   // if the first page drew before this file loaded, make today's copies now and redraw
   if (DS.state.user) ensure().then(n => { if (n) refresh(); }).catch(() => {});
 })();

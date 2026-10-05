@@ -59,8 +59,12 @@
     if (!cats.length) cats = await seedCats(id);
     // your own list of direct debits and bills (Personal); a record only, never counted in money in / out
     // ... and loans / lending with their repayments (also a record only)
-    let planned = [], debts = [], debtPays = [], ticked = [];
+    let planned = [], debts = [], debtPays = [], ticked = [], goals = [], gHold = [], gVals = [];
     if (isPersonal(id)) {
+      [goals, gHold, gVals] = await Promise.all([
+        q(sb.from('savings_goals').select('*').eq('archived', false).order('position')).catch(() => []),
+        q(sb.from('money_holdings').select('id,name').eq('archived', false).order('position')).catch(() => []),
+        q(sb.from('money_values').select('holding_id,valued_on,value_pence').order('valued_on')).catch(() => [])]);
       [planned, debts, debtPays, ticked] = await Promise.all([
         q(sb.from('money_planned').select('*').eq('book_id', id).order('next_on')).catch(() => []),
         q(sb.from('money_debts').select('*').eq('book_id', id).order('started_on')).catch(() => []),
@@ -70,7 +74,7 @@
       debtPays = debtPays.filter(x => debts.some(d => d.id === x.debt_id));
     }
     if (M.book !== id) return;
-    Object.assign(M, { cats, rules, tx, planned, debts, debtPays, ddPaid: new Map(ticked.map(t => [t.import_key, t])) });
+    Object.assign(M, { cats, rules, tx, planned, debts, debtPays, goals, gHold, gVals, ddPaid: new Map(ticked.map(t => [t.import_key, t])) });
   }
   // a new book starts with sensible categories (yours to rename, budget or delete)
   async function seedCats(id) {
@@ -143,7 +147,7 @@
   }
   // Cards start folded (just their heading and a short summary); the arrow opens one at a time to work in it.
   // What's open is remembered while the app is open (this browser tab), so redraws don't fold them again.
-  const FOLD = { 'mn-spend': 'spend', 'mn-income': 'income', 'mn-trend': 'trend', 'mn-planned': 'planned', 'mn-debt-borrowed': 'loans',
+  const FOLD = { 'mn-spend': 'spend', 'mn-income': 'income', 'mn-trend': 'trend', 'mn-planned': 'planned', 'mn-goals': 'goals', 'mn-debt-borrowed': 'loans',
     'mn-debt-lent': 'lending', 'mn-list': 'payments', 'mn-worthchart': 'worth', 'mn-holdings': 'holdings' };
   const opened = new Set((() => { try { return JSON.parse(sessionStorage.getItem('mn_open') || '[]'); } catch (e) { return []; } })());
   const CHEV = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
@@ -344,7 +348,7 @@
       el('button', { type: 'button', class: 'arrow', 'aria-label': 'Next month', onclick: () => changeMonth(addMonths(M.month, 1)) }, '›'),
       isNow ? null : el('button', { type: 'button', class: 'pill', onclick: () => changeMonth(monthStart(today())) }, 'This month'));
     const P = isPersonal(M.book);
-    return [nav, quickAdd(), kpis(mtx), split(spending(mtx), income(mtx), trend(), P ? plannedCard() : null, P ? debtCard('borrowed') : null, P ? debtCard('lent') : null, txList(mtx))];
+    return [nav, quickAdd(), kpis(mtx), split(spending(mtx), income(mtx), trend(), P ? plannedCard() : null, P ? goalsCard() : null, P ? debtCard('borrowed') : null, P ? debtCard('lent') : null, txList(mtx))];
   }
 
   function catSelect(value, { kind, id, label } = {}) {
@@ -388,8 +392,27 @@
       draw('mn-qin');
     };
     input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+    // snap a receipt: read on this device, then it's filled in here for you to check and Add
+    const snap = el('button', { type: 'button', class: 'mn-snap', title: 'Snap a receipt', 'aria-label': 'Snap a receipt', onclick: () => {
+      const f = el('input', { type: 'file', accept: 'image/*', capture: 'environment', style: 'display:none' });
+      f.addEventListener('change', async () => {
+        const file = f.files[0]; f.remove(); if (!file) return;
+        if (!window.MoneyX) return toast('The receipt reader isn’t loaded. Refresh and try again.');
+        snap.disabled = true; snap.classList.add('busy'); hint.textContent = 'Reading the receipt…';
+        try {
+          const r = await window.MoneyX.readReceipt(file, (st, p) => { if (/recogniz/i.test(st)) hint.textContent = `Reading the receipt… ${Math.round(p * 100)}%`; else if (/load/i.test(st)) hint.textContent = 'Getting the receipt reader ready…'; });
+          if (!r.pence) { hint.textContent = ''; toast('Couldn’t find the total on that receipt. Type it in instead.'); input.focus(); return; }
+          input.value = `${(r.pence / 100).toFixed(2)} ${r.shop || 'Receipt'}`;
+          if (r.date) date.value = r.date;
+          manual = false; update(); input.focus();
+          toast(`Read ${gbp(-r.pence)}${r.shop ? ' at ' + r.shop : ''}${r.date ? ' on ' + fmt(r.date, { day: 'numeric', month: 'short' }) : ''}. Check it, then press Add.`);
+        } catch (e) { hint.textContent = ''; toast(e && e.message ? e.message : 'Couldn’t read that receipt.'); }
+        finally { snap.disabled = false; snap.classList.remove('busy'); }
+      });
+      document.body.append(f); f.click();
+    } }, Object.assign(el('span', { 'aria-hidden': 'true' }), { innerHTML: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>' }));
     return el('div', { class: 'mn-quick' },
-      el('span', { class: 'mn-qplus', 'aria-hidden': 'true' }, '+'), input, hint, sel, date,
+      el('span', { class: 'mn-qplus', 'aria-hidden': 'true' }, '+'), input, hint, snap, sel, date,
       el('button', { type: 'button', class: 'btn primary', onclick: add }, 'Add'));
   }
 
@@ -704,7 +727,8 @@
     };
     return el('section', { class: 'mn-card mn-planned', 'data-sum': M.planned.length ? `${gbp(Math.round(monthly), { whole: true })} a month` + (left ? ` · ${gbp(left)} to go` : '') : 'none added yet' },
       el('div', { class: 'mn-ch' }, el('h3', {}, 'Direct debits & bills'),
-        M.planned.length ? el('span', { class: 'mn-psum' }, amt(Math.round(monthly), { whole: true }), ' a month') : null),
+        M.planned.length ? el('span', { class: 'mn-psum' }, amt(Math.round(monthly), { whole: true }), ' a month') : null,
+        el('button', { type: 'button', class: 'linkish mn-findsubs', onclick: subsDialog, title: 'Look through your payments for things that repeat' }, 'Find subscriptions')),
       el('p', { class: 'mn-pnote' }, 'Tick one when it’s been paid and it’s added to money out.'),
       M.planned.length ? el('p', { class: 'mn-total' }, left ? [amt(left), ' still to go out this month'] : 'Nothing more to go out this month.') : null,
       list.length ? el('div', { class: 'mn-plist mn-cap', 'data-cap': 'dd', 'data-items': '.mn-prow' }, list.map(({ p, due, paid }) => el('div', { class: 'mn-prow' + (paid ? ' paid' : due < today() ? ' late' : ''), 'data-pid': p.id },
@@ -864,6 +888,85 @@
     try { await q(sb.from('money_debts').delete().eq('id', d.id)); } catch (e) { return false; }
     M.debts = M.debts.filter(x => x !== d); M.debtPays = M.debtPays.filter(x => x.debt_id !== d.id);
     toast('Deleted.'); draw(); return true;
+  }
+
+  /* ---------- savings goals (Personal) ---------- */
+  const goalSaved = g => {
+    if (!g.holding_id) return g.saved_pence;
+    let v = null; for (const x of M.gVals || []) if (x.holding_id === g.holding_id && (!v || x.valued_on >= v.valued_on)) v = x;
+    return v ? Math.max(0, v.value_pence) : 0;
+  };
+  const monthsTo = d => { const a = new Date(today() + 'T12:00:00'), b = new Date(d + 'T12:00:00'); return Math.max(0, (b.getFullYear() - a.getFullYear()) * 12 + b.getMonth() - a.getMonth() + (b.getDate() >= a.getDate() ? 0 : -1)) || (d > today() ? 1 : 0); };
+  function goalsCard() {
+    const goals = M.goals || [];
+    const tot = goals.reduce((a, g) => a + g.target_pence, 0), have = goals.reduce((a, g) => a + Math.min(goalSaved(g), g.target_pence), 0);
+    const name = el('input', { class: 'field', maxlength: '80', placeholder: 'e.g. Holiday, New car, Emergency fund', 'aria-label': 'Goal' });
+    const target = el('input', { class: 'field', inputmode: 'decimal', placeholder: '£ target', 'aria-label': 'Target in pounds' });
+    const due = el('input', { class: 'field', type: 'date', 'aria-label': 'By when (optional)', min: today() });
+    const link = el('select', { class: 'field', 'aria-label': 'Follow an investment' }, el('option', { value: '' }, 'Track it myself'), ...(M.gHold || []).map(h => el('option', { value: h.id }, 'Follow: ' + h.name)));
+    const add = async e => {
+      e.preventDefault();
+      const n = name.value.trim(), t = C.parseAmount(target.value);
+      if (!n) return name.focus();
+      if (!t) { toast('Enter the target in pounds, e.g. 2000.'); return target.focus(); }
+      try { const row = await q(sb.from('savings_goals').insert({ user_id: DS.uid(), name: n, target_pence: Math.abs(t), due_on: due.value || null, holding_id: link.value || null }).select().single()); M.goals = [...goals, row]; } catch (er) { return; }
+      toast(`Goal added: ${n}.`); draw();
+    };
+    const rowOf = g => {
+      const saved = goalSaved(g), pct = Math.min(100, Math.round(saved / g.target_pence * 100)), left = Math.max(0, g.target_pence - saved);
+      const m = g.due_on ? monthsTo(g.due_on) : null;
+      const pace = left === 0 ? 'Reached 🎉' : g.due_on ? (g.due_on < today() ? `${gbp(left)} short, date passed` : `${gbp(Math.ceil(left / Math.max(1, m)))} a month to get there by ${fmt(g.due_on, { month: 'short', year: 'numeric' })}`) : `${gbp(left)} to go`;
+      const holding = g.holding_id && (M.gHold || []).find(h => h.id === g.holding_id);
+      return el('div', { class: 'mn-goal' + (left === 0 ? ' done' : '') },
+        el('div', { class: 'mn-goalh' }, el('b', {}, g.name), amt(saved, {}, 'mn-goalv'), el('span', { class: 'mn-goalt' }, ' of ', amt(g.target_pence, { whole: true }))),
+        el('div', { class: 'mn-goalbar', role: 'progressbar', 'aria-valuenow': String(pct), 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-label': `${g.name} ${pct}%` }, el('i', { style: `width:${pct}%` })),
+        el('div', { class: 'mn-goalf' }, el('small', {}, `${pct}% · ${pace}`), holding ? el('small', { class: 'mn-goall' }, `follows ${holding.name}`) : null,
+          !g.holding_id && left > 0 ? el('button', { type: 'button', class: 'btn cr-small', onclick: async () => {
+            const v = prompt(`Add to “${g.name}” (£). Use a minus to take some out.`, ''); if (v == null) return;
+            const p = C.parseAmount(v); if (!p) return;
+            const next = Math.max(0, g.saved_pence + (String(v).trim().startsWith('-') ? -Math.abs(p) : Math.abs(p)));
+            try { await q(sb.from('savings_goals').update({ saved_pence: next }).eq('id', g.id)); } catch (e) { return; }
+            g.saved_pence = next; toast(next >= g.target_pence ? `“${g.name}” reached! 🎉` : `${g.name}: ${gbp(next)} saved.`); draw();
+          } }, '+ Add money') : null,
+          el('button', { type: 'button', class: 'mn-del', title: 'Remove goal', 'aria-label': `Remove ${g.name}`, onclick: async () => {
+            if (!confirm(`Remove the goal “${g.name}”?`)) return;
+            try { await q(sb.from('savings_goals').update({ archived: true }).eq('id', g.id)); } catch (e) { return; }
+            M.goals = goals.filter(x => x !== g); toast('Goal removed.'); draw();
+          } }, icon('trash', 15))));
+    };
+    return el('section', { class: 'mn-card mn-goals', 'data-sum': goals.length ? `${goals.length} goal${goals.length === 1 ? '' : 's'} · ${Math.round(have / tot * 100)}% saved` : 'none yet' },
+      el('div', { class: 'mn-ch' }, el('h3', {}, 'Savings goals'), goals.length ? el('span', { class: 'mn-psum' }, amt(have, { whole: true }), ' of ', amt(tot, { whole: true })) : null),
+      goals.length ? el('div', { class: 'mn-goallist' }, goals.map(rowOf)) : el('p', { class: 'mn-empty' }, 'Set something to save for, with a date if you like, and see how much a month gets you there. It can follow an investment in Net worth instead of you adding to it.'),
+      el('form', { class: 'mn-padd mn-gadd', onsubmit: add }, name, target, due, link, el('button', { type: 'submit', class: 'btn primary' }, icon('plus', 14), ' Add goal')));
+  }
+
+  /* ---------- find subscriptions in your payments ---------- */
+  const dismissed = () => { try { return new Set(JSON.parse(localStorage.getItem('mn_subs_no') || '[]')); } catch (e) { return new Set(); } };
+  async function subsFound() {
+    if (!window.MoneyX) return [];
+    const book = M.books.find(b => b.kind === 'personal'); if (!book) return [];
+    const tx = await q(sb.from('money_tx').select('occurred_on,amount_pence,description,category').eq('book_id', book.id).lt('amount_pence', 0).gte('occurred_on', addMonths(monthStart(today()), -12)).limit(20000)).catch(() => []);
+    const no = dismissed();
+    return window.MoneyX.findSubscriptions(tx, M.planned || [], today(), C.merchantKey).filter(s => !no.has(s.key));
+  }
+  async function subsDialog() {
+    const body = el('div', { class: 'mn-subs' }, el('p', { class: 'meta' }, 'Looking through the last 12 months…'));
+    const dlg = dialog('Find subscriptions', body, 'mn-subsdlg');
+    const found = await subsFound();
+    const CAD = { weekly: 'Weekly', monthly: 'Monthly', quarterly: 'Every 3 months', yearly: 'Yearly' };
+    const draw2 = list => body.replaceChildren(
+      el('p', { class: 'meta' }, list.length ? 'These payments repeat (same place, about the same amount, regularly) but aren’t in your direct debits yet.' : 'Nothing new found. Payments need to repeat at least 3 times (2 for yearly or every 3 months) to show here.'),
+      ...list.map(s => el('div', { class: 'mn-sub' },
+        el('div', {}, el('b', {}, s.name), el('small', {}, `${CAD[s.cadence]} · ${s.count} payments · last ${fmt(s.last_on, { day: 'numeric', month: 'short' })} · next about ${fmt(s.next_on, { day: 'numeric', month: 'short' })}`)),
+        amt(s.amount_pence, {}, 'mn-subamt'),
+        el('div', { class: 'mn-subacts' },
+          el('button', { type: 'button', class: 'btn primary cr-small', onclick: async () => {
+            try { const row = await q(sb.from('money_planned').insert({ user_id: DS.uid(), book_id: M.books.find(b => b.kind === 'personal').id, name: s.name.slice(0, 80), amount_pence: s.amount_pence, cadence: s.cadence, next_on: s.next_on }).select().single()); if (isPersonal(M.book)) M.planned.push(row); } catch (e) { return; }
+            toast(`${s.name} added to direct debits.`); draw2(list.filter(x => x !== s)); draw();
+          } }, 'Add'),
+          el('button', { type: 'button', class: 'btn cr-small', onclick: () => { const no = dismissed(); no.add(s.key); try { localStorage.setItem('mn_subs_no', JSON.stringify([...no])); } catch (e) {} draw2(list.filter(x => x !== s)); } }, 'Not one')))),
+      el('div', { class: 'actions' }, el('button', { type: 'button', class: 'btn', onclick: () => dlg.close() }, 'Done')));
+    draw2(found);
   }
 
   /* ---------- export: this month so far, every book (the same report that's emailed on the 30th) ---------- */
@@ -1177,6 +1280,7 @@
       dlg.close();
       toast(`Imported ${done} payment${done === 1 ? '' : 's'}${sorted ? `, ${sorted} sorted into categories` : ''}.${done - sorted ? ' Sort the rest in the list; it learns as you go.' : ''}`);
       draw();
+      if (isPersonal(M.book)) { const found = await subsFound(); if (found.length) setTimeout(() => toast(`Found ${found.length} payment${found.length === 1 ? '' : 's'} that look like subscriptions. See Direct debits → Find subscriptions.`), 2600); }
     }
     pickFile();
     const dlg = dialog('Import a bank statement', body, 'mn-impdlg');
@@ -1332,7 +1436,17 @@
   /* ---------- wiring: the Capital tab in the menu ---------- */
   DS.views.capital = viewMoney;
   DS.views.money = viewMoney;
-  DS.money = { core: C, state: M };
+  // open Capital at a payment (from search): its book, its month, Payments open, the row highlighted
+  async function showFromAnywhere(t) {
+    if (t.book_id && t.book_id !== M.book) { M.book = t.book_id; store('mn_book', t.book_id); }
+    M.view = 'book'; store('mn_view', 'book');
+    if (state.view !== 'capital') {
+      DS.go('capital');
+      for (let i = 0; i < 40 && !(page && page.isConnected && page.querySelector('.mn-md')); i++) await new Promise(r => setTimeout(r, 100));
+    } else if (!page || !page.querySelector('.mn-md')) { await loadBook(); draw(); }
+    if (page && page.isConnected) { await loadBook(); await showPayment(t); }
+  }
+  DS.money = { core: C, state: M, show: showFromAnywhere };
   function ensureNav() {
     const nav = document.querySelector('#app nav.nav');
     if (!nav) return;

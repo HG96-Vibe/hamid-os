@@ -37,7 +37,8 @@
     const [tasks, weekT, monthT, wins, rv, repeats] = await Promise.all([
       fetchTasks('day', d), fetchTasks('week', ws), fetchTasks('month', ms),
       q(sb.from('wins').select('*').eq('day', d).order('created_at')), fetchReview('day', d),
-      DS.repeats ? q(sb.from('task_repeats').select('id,days,paused')).catch(() => []) : []]);
+      DS.repeats ? q(sb.from('task_repeats').select('id,days,paused')).catch(() => []) : [],
+      DS.repeats && DS.repeats.streaks ? DS.repeats.streaks().catch(() => ({})) : null]);
     const isToday = d === today();
     const rpById = Object.fromEntries(repeats.map(r => [r.id, r]));
     const live = tasks.filter(t => t.status !== 'carried');

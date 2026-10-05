@@ -89,7 +89,8 @@
       q(sb.from('tasks').select('id,title,status,project_id,parent_id,period_start,scheduled_on').eq('horizon', 'week').eq('period_start', ws).neq('status', 'carried').order('position')),
       q(sb.from('tasks').select('id,title,status,project_id,parent_id,period_start').eq('horizon', 'day').eq('period_start', t0).neq('status', 'carried').order('position')),
       q(sb.from('tasks').select('id,title,status,horizon,project_id,period_start,created_at,completed_at').not('project_id', 'is', null).gte('period_start', since).order('period_start', { ascending: false })),
-      q(sb.from('focus_sessions').select('minutes,started_at,tasks(project_id)').gte('started_at', new Date(weekStart(t0) + 'T00:00:00').toISOString()))
+      q(sb.from('focus_sessions').select('minutes,started_at,project_id,tasks(project_id)').gte('started_at', new Date(weekStart(t0) + 'T00:00:00').toISOString())),
+      DS.projx ? DS.projx.load() : null
     ]);
     return { month, week, day, recent, focus };
   }
@@ -102,7 +103,7 @@
     const month = of(D.month), week = of(D.week), day = of(D.day), recent = of(D.recent);
     const outcomes = month.filter(t => t.status !== 'dropped');
     const achieved = outcomes.filter(t => t.status === 'done').length;
-    const focus = D.focus.filter(f => ids.includes(f.tasks?.project_id)).reduce((a, f) => a + (f.minutes || 0), 0);
+    const focus = D.focus.filter(f => ids.includes(f.tasks?.project_id) || ids.includes(f.project_id)).reduce((a, f) => a + (f.minutes || 0), 0);
     const stamps = recent.map(t => t.completed_at || t.created_at).filter(Boolean).sort();
     const last = stamps[stamps.length - 1] || null;
     return { month, week, day, recent, outcomes, achieved, focus, last,
@@ -138,6 +139,7 @@
         el('h3', { class: 'pj-name' }, general ? `${p.name} · general` : p.name),
         p.status !== 'active' ? el('span', { class: 'pj-status' }, p.status === 'paused' ? 'Paused' : 'Done') : null),
       p.goal && !general ? el('p', { class: 'pj-goal' }, p.goal) : null,
+      DS.projx && !general ? DS.projx.nextChip(family(p.id)) : null,
       progress(s),
       el('div', { class: 'pj-cols' },
         el('div', {}, el('h4', {}, 'This month'), itemList(s.outcomes, 'No outcomes')),
@@ -224,6 +226,9 @@
         el('section', { class: 'pj-sec' }, el('h3', {}, 'Recently done'),
           done.length ? el('ul', { class: 'pj-log' }, done.map(t => el('li', {},
             el('span', {}, t.title), el('time', {}, fmt(t.period_start, { day: 'numeric', month: 'short' }))))) : el('p', { class: 'pj-none' }, 'Nothing finished in the last 60 days.'))),
+      DS.projx ? DS.projx.milestones(p, family(p.id)) : null,
+      DS.projx ? DS.projx.timeBox(p, family(p.id)) : null,
+      DS.people ? DS.people.forProject(family(p.id), p.id) : null,
       DS.worklog ? DS.worklog.projectLog(p) : null,
       DS.create ? DS.create.forProject(family(p.id), p.id) : null,
       isRoot(p) && kids(p.id).length ? el('section', { class: 'section' }, el('h2', {}, 'Projects in ' + p.name),

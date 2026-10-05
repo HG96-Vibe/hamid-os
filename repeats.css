@@ -56,3 +56,14 @@ dialog.rp-dlg{overflow:auto}
 .rp-box .btn.danger:hover{background:#fef2f2}
 .rp-box h2{color:#1e1b4b;font-size:22px;letter-spacing:-.01em}
 @media (max-width:560px){ .td-rpbtn{margin-left:0} }
+/* streaks */
+.rp-stats{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:12.5px;color:#5b5f86}
+.rp-fire{font-weight:700;color:#7a7ea3}
+.rp-fire.on{color:#c2410c}
+.rp-nudge{font-weight:700;color:#b45309}
+.rp-year{display:grid;grid-auto-flow:column;grid-template-rows:repeat(7,9px);gap:2px;overflow-x:auto;padding-bottom:2px}
+.rp-year i{width:9px;height:9px;border-radius:2px;background:#ececf3}
+.rp-year i.y{background:#16a34a}
+.rp-year i.n{background:#fca5a5}
+.rp-year i.o{background:#fde68a}
+.rp-year i.f{background:transparent;border:1px dashed #e4e4ee}
