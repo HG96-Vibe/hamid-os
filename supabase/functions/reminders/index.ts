@@ -42,6 +42,14 @@ async function sendAll(subs: Sub[], payload: Record<string, string>) {
   return ok;
 }
 
+// send a notification and keep it for the bell in the app's top bar
+async function tell(userId: string, subs: Sub[], payload: Record<string, string>) {
+  const { error } = await sb.from('notifications').insert({ user_id: userId, title: String(payload.title).slice(0, 300), body: payload.body ? String(payload.body).slice(0, 2000) : null,
+    url: payload.url ? String(payload.url).slice(0, 300) : null, tag: payload.tag ? String(payload.tag).slice(0, 120) : null });
+  if (error) console.error('notification not saved', error.message);
+  return subs.length ? await sendAll(subs, payload) : 0;
+}
+
 async function sendEmail(to: string, subject: string, html: string) {
   const key = Deno.env.get('RESEND_API_KEY');
   if (!key) { console.error('RESEND_API_KEY missing'); return false; }
@@ -131,7 +139,7 @@ async function makeReport(userId: string, kind: 'week' | 'month', start: string,
     emailed = await sendEmail(email, subject, reportEmail(r));
     if (emailed) await sb.from('reports').update({ emailed_at: new Date().toISOString() }).eq('user_id', userId).eq('kind', kind).eq('period_start', start);
   }
-  if (subs.length) await sendAll(subs, { title: kind === 'week' ? 'Your week in review is ready' : 'Your month in review is ready',
+  await tell(userId, subs, { title: kind === 'week' ? 'Your week in review is ready' : 'Your month in review is ready',
     body: `${r.tasks.done}/${r.tasks.total} tasks done. Time to plan the ${kind === 'week' ? 'week' : 'month'} ahead.`, url: '/#reports', tag: 'report-' + kind });
   return { ok: true, emailed };
 }
@@ -159,7 +167,7 @@ function dueOn(p: Planned, d: string) {
 }
 async function alerts(s: Record<string, any>, L: { date: string; mins: number }, subs: Sub[], result: Record<string, number>) {
   const uid = s.user_id, t0 = L.date, tom = addD(t0, 1);
-  const send = async (key: string, payload: Record<string, string>) => { if (await once(uid, key)) { await sendAll(subs, payload); result.alerts = (result.alerts || 0) + 1; } };
+  const send = async (key: string, payload: Record<string, string>) => { if (await once(uid, key)) { await tell(uid, subs, payload); result.alerts = (result.alerts || 0) + 1; } };
   const day = L.mins >= 8 * 60 && L.mins < 21 * 60;
   // direct debits tomorrow (Personal), from 6pm
   if (L.mins >= 18 * 60 && L.mins < 22 * 60) {
@@ -242,7 +250,7 @@ Deno.serve(async (req) => {
     // Claude posted a brief (through the connector): let your phone know
     if (body.brief) {
       const kind = body.brief === 'weekly' ? 'weekly' : 'morning';
-      const sent = await sendAll(subs || [], { title: kind === 'weekly' ? 'Your weekly review is ready' : 'Your morning brief is ready',
+      const sent = await tell(u.user.id, subs || [], { title: kind === 'weekly' ? 'Your weekly review is ready' : 'Your morning brief is ready',
         body: String(body.title || 'From Claude, on your Home page.').slice(0, 140), url: '/', tag: 'brief-' + kind });
       return json({ sent });
     }
@@ -270,7 +278,11 @@ Deno.serve(async (req) => {
     if (s.last_rollover !== L.date && due(L.mins, '04:00')) {
       const { error } = await sb.rpc('ds_rollover', { p_user: s.user_id, p_today: L.date });
       if (error) console.error('rollover failed', error.message);
-      else { patch.last_rollover = L.date; result.rollover++; }
+      else {
+        patch.last_rollover = L.date; result.rollover++;
+        // the bell keeps 60 days
+        await sb.from('notifications').delete().eq('user_id', s.user_id).lt('created_at', new Date(Date.now() - 60 * 864e5).toISOString());
+      }
     }
 
     // Sunday 6pm: weekly report + plan-next-week email. Last day of the month, 6pm: monthly report.
@@ -292,29 +304,30 @@ Deno.serve(async (req) => {
           const stuck = (today || []).filter(t => t.carry_count >= 3);
           let msg = count ? `You have ${count} task${count === 1 ? '' : 's'} on today’s sheet. Anything to add?` : 'Your sheet for today is blank. Write down what has to happen.';
           if (stuck.length) msg += ` Stuck: “${stuck[0].title}”${stuck.length > 1 ? ` and ${stuck.length - 1} more` : ''} carried 3+ times. Schedule it, break it down or drop it.`;
-          await sendAll(subs, { title: stuck.length ? 'Plan your day (some tasks are stuck)' : 'Plan your day', body: msg, url: '/', tag: 'morning' });
+          await tell(s.user_id, subs, { title: stuck.length ? 'Plan your day (some tasks are stuck)' : 'Plan your day', body: msg, url: '/', tag: 'morning' });
           patch.last_morning = L.date; result.morning++;
         }
         if (s.evening_on && s.last_evening !== L.date && due(L.mins, s.evening_time)) {
           const { data: rv } = await sb.from('reviews').select('closed_at').eq('user_id', s.user_id).eq('horizon', 'day').eq('period_start', L.date).maybeSingle();
           if (!rv?.closed_at) {
-            await sendAll(subs, { title: 'Close out the day', body: 'Two minutes: drop what won’t happen, log your wins, rate the day. Anything left open moves to the next day at 4am.', url: '/', tag: 'evening' });
+            await tell(s.user_id, subs, { title: 'Close out the day', body: 'Two minutes: drop what won’t happen, log your wins, rate the day. Anything left open moves to the next day at 4am.', url: '/', tag: 'evening' });
             result.evening++;
           }
           patch.last_evening = L.date;
         }
       }
       if (s.backup_nudge && L.wd === 'Sun' && s.last_backup !== L.date && due(L.mins, '10:00')) {
-        await sendAll(subs, { title: 'Weekly backup', body: 'Download a copy of your sheet from Settings → Export.', url: '/#settings', tag: 'backup' });
+        await tell(s.user_id, subs, { title: 'Weekly backup', body: 'Download a copy of your sheet from Settings → Export.', url: '/#settings', tag: 'backup' });
         patch.last_backup = L.date; result.backup++;
       }
-      if (s.alerts_on !== false) { try { await alerts(s, L, subs, result); } catch (e) { console.error('alerts failed', String(e)); } }
-      const { data: tasks } = await sb.from('tasks').select('id,title,context').eq('user_id', s.user_id).eq('status', 'open').is('reminded_at', null).lte('remind_at', new Date().toISOString()).limit(20);
-      for (const t of tasks || []) {
-        await sendAll(subs, { title: 'Reminder', body: t.title + (t.context ? ` (${t.context})` : ''), url: '/', tag: 'task-' + t.id });
-        await sb.from('tasks').update({ reminded_at: new Date().toISOString() }).eq('id', t.id);
-        result.tasks++;
-      }
+    }
+    // heads-ups and task reminders go to the bell in the app (and to phones that have notifications on)
+    if (s.alerts_on !== false) { try { await alerts(s, L, subs, result); } catch (e) { console.error('alerts failed', String(e)); } }
+    const { data: tasks } = await sb.from('tasks').select('id,title,context').eq('user_id', s.user_id).eq('status', 'open').is('reminded_at', null).lte('remind_at', new Date().toISOString()).limit(20);
+    for (const t of tasks || []) {
+      await tell(s.user_id, subs, { title: 'Reminder', body: t.title + (t.context ? ` (${t.context})` : ''), url: '/#today', tag: 'task-' + t.id });
+      await sb.from('tasks').update({ reminded_at: new Date().toISOString() }).eq('id', t.id);
+      result.tasks++;
     }
     if (Object.keys(patch).length) await sb.from('settings').update(patch).eq('user_id', s.user_id);
   }
