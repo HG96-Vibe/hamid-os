@@ -1,4 +1,16 @@
 {
+  "rewrites": [
+    { "source": "/.well-known/oauth-protected-resource", "destination": "/api/oauth?op=resource" },
+    { "source": "/.well-known/oauth-protected-resource/:path*", "destination": "/api/oauth?op=resource" },
+    { "source": "/.well-known/oauth-authorization-server", "destination": "/api/oauth?op=meta" },
+    { "source": "/.well-known/oauth-authorization-server/:path*", "destination": "/api/oauth?op=meta" },
+    { "source": "/.well-known/openid-configuration", "destination": "/api/oauth?op=meta" },
+    { "source": "/oauth/register", "destination": "/api/oauth?op=register" },
+    { "source": "/oauth/token", "destination": "/api/oauth?op=token" },
+    { "source": "/oauth/code", "destination": "/api/oauth?op=code" },
+    { "source": "/oauth/authorize", "destination": "/connect.html" },
+    { "source": "/mcp", "destination": "/api/mcp" }
+  ],
   "headers": [
     { "source": "/(.*)", "headers": [
       { "key": "X-Frame-Options", "value": "DENY" },

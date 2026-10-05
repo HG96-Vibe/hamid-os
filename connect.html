@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#1e1b4b">
+<meta name="color-scheme" content="dark">
+<title>Connect Claude · Hamid OS</title>
+<link rel="icon" href="/icon-v2.png" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Source+Sans+3:wght@400..700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg: #0f0d2e; --card: #1e1b4b; --ink: #eef0ff; --muted: #a9acd6; --line: #34306e; --accent: #818cf8; --accent-ink: #0f0d2e; --err: #fca5a5; --ok: #6ee7b7; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body { background: radial-gradient(1200px 600px at 20% -10%, #312e81 0%, transparent 60%), var(--bg); color: var(--ink);
+    font: 16px/1.5 'Source Sans 3', system-ui, sans-serif; display: grid; place-items: center; min-height: 100vh; padding: 24px 16px; }
+  .card { width: 100%; max-width: 400px; background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 28px 24px 22px; box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; font: 700 15px 'Bricolage Grotesque', sans-serif; color: var(--muted); }
+  .brand img { width: 28px; height: 28px; border-radius: 8px; }
+  h1 { font: 800 24px/1.2 'Bricolage Grotesque', sans-serif; margin: 0 0 6px; }
+  p { margin: 0 0 16px; color: var(--muted); }
+  label { display: block; font-weight: 600; font-size: 14px; margin: 12px 0 6px; }
+  input { width: 100%; font: inherit; color: var(--ink); background: rgba(255,255,255,.04); border: 1px solid var(--line); border-radius: 12px; padding: 11px 13px; }
+  input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
+  input.code { font-size: 22px; letter-spacing: .3em; text-align: center; }
+  .row { display: flex; gap: 10px; margin-top: 20px; }
+  button { flex: 1; font: 700 15px 'Source Sans 3', sans-serif; border-radius: 12px; padding: 12px 14px; cursor: pointer; border: 1px solid var(--line); background: transparent; color: var(--ink); }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  button:disabled { opacity: .55; cursor: default; }
+  button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .err { color: var(--err); min-height: 1.5em; margin: 12px 0 0; font-size: 14px; }
+  ul.can { margin: 4px 0 4px; padding: 0 0 0 20px; color: var(--ink); }
+  ul.can li { margin: 4px 0; }
+  .small { font-size: 13px; color: var(--muted); margin-top: 14px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main class="card" aria-live="polite">
+  <div class="brand"><img src="/icon-v2.png" alt="">Hamid OS</div>
+
+  <form id="signin" hidden>
+    <h1>Connect Claude</h1>
+    <p>Sign in to Hamid OS to let Claude see and update your data.</p>
+    <label for="email">Email</label>
+    <input id="email" type="email" autocomplete="username" required>
+    <label for="pw">Password</label>
+    <input id="pw" type="password" autocomplete="current-password" required>
+    <div class="row"><button type="button" class="cancel">Cancel</button><button class="primary" type="submit">Continue</button></div>
+    <p class="err" role="alert"></p>
+  </form>
+
+  <form id="twofa" hidden>
+    <h1>One more step</h1>
+    <p>Enter the 6-digit code from your authenticator app.</p>
+    <label for="code">Code</label>
+    <input id="code" class="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required>
+    <div class="row"><button type="button" class="cancel">Cancel</button><button class="primary" type="submit">Verify</button></div>
+    <p class="err" role="alert"></p>
+  </form>
+
+  <form id="allow" hidden>
+    <h1>Allow Claude?</h1>
+    <p>Claude will be able to:</p>
+    <ul class="can">
+      <li>See your Capital (payments, direct debits, budgets, loans, net worth), tasks, projects and documents</li>
+      <li>Add and change things there when you ask, such as a direct debit or a task</li>
+    </ul>
+    <p class="small">Claude asks you before it changes anything. It can’t reach your bank. To disconnect, remove the connector in Claude, or use “Sign out everywhere else” in Hamid OS → Settings.</p>
+    <div class="row"><button type="button" class="cancel">Cancel</button><button class="primary" type="submit">Allow</button></div>
+    <p class="err" role="alert"></p>
+  </form>
+
+  <div id="msg" hidden><h1></h1><p></p></div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script>
+<script>
+(() => {
+  'use strict';
+  const SUPABASE_URL = 'https://xxvsosusnqnrgdigqfyw.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_2gtV8CTvawIZCMcy8idg6g_T_l_1nvj';
+  const $ = s => document.querySelector(s);
+  const P = new URLSearchParams(location.search);
+  const req = { client_id: P.get('client_id'), redirect_uri: P.get('redirect_uri'), state: P.get('state') || '', code_challenge: P.get('code_challenge'),
+    code_challenge_method: P.get('code_challenge_method') || 'plain', response_type: P.get('response_type') };
+
+  const show = id => { for (const f of ['#signin', '#twofa', '#allow', '#msg']) $(f).hidden = f !== id; const i = $(id).querySelector('input'); if (i) i.focus(); };
+  const message = (title, text) => { $('#msg h1').textContent = title; $('#msg p').textContent = text; show('#msg'); };
+  const errOf = form => $(form + ' .err');
+  const busy = (form, on) => $(form).querySelectorAll('button').forEach(b => { b.disabled = on; });
+
+  // a broken request: say so here, never send it anywhere
+  if (!req.client_id || !req.redirect_uri || req.response_type !== 'code' || !req.code_challenge) {
+    message('Something’s missing', 'This link didn’t come from Claude correctly. Go back to Claude and try connecting again.');
+    return;
+  }
+  let back;
+  try { back = new URL(req.redirect_uri); } catch (e) { message('Something’s wrong', 'Go back to Claude and try connecting again.'); return; }
+  const okBack = (back.protocol === 'https:' && ['claude.ai', 'claude.com'].includes(back.hostname)) || (back.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(back.hostname));
+  if (!okBack) { message('Not allowed', 'Only Claude can connect to Hamid OS.'); return; }
+
+  const cancel = () => { const u = new URL(req.redirect_uri); u.searchParams.set('error', 'access_denied'); if (req.state) u.searchParams.set('state', req.state); location.replace(u.toString()); };
+  document.querySelectorAll('.cancel').forEach(b => b.addEventListener('click', cancel));
+
+  if (!window.supabase) { message('Couldn’t load', 'Check your connection and reload this page.'); return; }
+  // a separate session just for Claude: nothing saved in this browser
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'hos-connect' } });
+  let factor = null;
+
+  $('#signin').addEventListener('submit', async e => {
+    e.preventDefault(); errOf('#signin').textContent = ''; busy('#signin', true);
+    const { error } = await sb.auth.signInWithPassword({ email: $('#email').value.trim(), password: $('#pw').value });
+    busy('#signin', false);
+    if (error) { errOf('#signin').textContent = 'That email or password didn’t work.'; return; }
+    const { data: f } = await sb.auth.mfa.listFactors();
+    factor = f && f.totp && f.totp[0];
+    if (!factor) { errOf('#signin').textContent = 'Set up two-step sign-in in Hamid OS first, then try again.'; await sb.auth.signOut({ scope: 'local' }); return; }
+    $('#pw').value = '';
+    show('#twofa');
+  });
+
+  $('#twofa').addEventListener('submit', async e => {
+    e.preventDefault(); errOf('#twofa').textContent = ''; busy('#twofa', true);
+    const { error } = await sb.auth.mfa.challengeAndVerify({ factorId: factor.id, code: $('#code').value.trim() });
+    busy('#twofa', false);
+    if (error) { errOf('#twofa').textContent = 'That code didn’t match. Try the current one from your authenticator app.'; $('#code').select(); return; }
+    show('#allow');
+  });
+
+  $('#allow').addEventListener('submit', async e => {
+    e.preventDefault(); errOf('#allow').textContent = ''; busy('#allow', true);
+    try {
+      const { data } = await sb.auth.getSession();
+      const s = data && data.session;
+      if (!s) throw new Error('Your sign-in has expired. Reload and sign in again.');
+      const r = await fetch('/oauth/code', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: s.refresh_token, client_id: req.client_id, redirect_uri: req.redirect_uri, state: req.state,
+          code_challenge: req.code_challenge, code_challenge_method: req.code_challenge_method }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.redirect) throw new Error(j.error_description || 'Couldn’t connect. Try again.');
+      message('Connected', 'Taking you back to Claude…');
+      location.replace(j.redirect);
+    } catch (err) { errOf('#allow').textContent = err.message; busy('#allow', false); }
+  });
+
+  show('#signin');
+})();
+</script>
+</body>
+</html>

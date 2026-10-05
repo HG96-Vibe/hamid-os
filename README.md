@@ -137,3 +137,14 @@ and the VAPID **public** key. They are safe in the browser because RLS protects 
 The front-end files were downloaded from the live site byte for byte and checked against known SHA-1 hashes. The Edge
 Function source and the schema were exported through the Supabase connector (read-only catalog queries), not with the
 Supabase CLI, so no Supabase login or database password was needed.
+
+## Claude connector (api/mcp.js, api/oauth.js, connect.html)
+
+A remote MCP server so the Claude app can read and update Hamid OS. Add it in Claude → Settings → Connectors →
+Add custom connector with `https://daily-sheet-six.vercel.app/mcp`, then sign in (password + 2FA) on the page it opens.
+
+- Tools: overview, money report, payments, categories / budgets, direct debits (add, change, tick paid, delete),
+  loans and lending, net worth, tasks, projects, documents. Deletes are marked destructive.
+- Every call runs as you with a 2FA Supabase session, so the same owner-only RLS applies.
+- `MCP_SECRET` (Vercel env, production only, never in the repo) seals sign-in codes and refresh tokens.
+- Disconnect: remove the connector in Claude, or Home → "Sign out everywhere else".

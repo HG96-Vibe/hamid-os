@@ -7,7 +7,8 @@ self.addEventListener('fetch', e => {
   const r = e.request;
   if (r.method !== 'GET') return;
   const u = new URL(r.url);
-  const own = u.origin === self.location.origin && u.pathname !== '/sw.js' && !u.pathname.startsWith('/__listen-audio/');
+  const own = u.origin === self.location.origin && u.pathname !== '/sw.js' && !u.pathname.startsWith('/__listen-audio/')
+    && !/^\/(oauth|api|mcp|\.well-known)(\/|$)/.test(u.pathname); // the Claude connector: never cached
   const lib = u.hostname === 'cdn.jsdelivr.net' && u.pathname.startsWith('/npm/@supabase/');
   if (!own && !lib) return;
   e.respondWith(fetch(r).then(res => {
