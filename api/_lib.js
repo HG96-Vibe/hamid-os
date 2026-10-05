@@ -85,7 +85,8 @@ function db(token) {
     insert: (table, rows) => call('POST', table, rows, 'return=representation'),
     upsert: (table, rows, onConflict) => call('POST', `${table}?on_conflict=${onConflict}`, rows, 'return=representation,resolution=merge-duplicates'),
     update: (path, patch) => call('PATCH', path, patch, 'return=representation'),
-    remove: path => call('DELETE', path, undefined, 'return=representation')
+    remove: path => call('DELETE', path, undefined, 'return=representation'),
+    rpc: (fn, args) => call('POST', `rpc/${fn}`, args)
   };
 }
 const enc = v => encodeURIComponent(v);

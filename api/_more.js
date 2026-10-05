@@ -3,6 +3,7 @@
 'use strict';
 
 module.exports = h => {
+  // (repeating tasks, below, need today's copies made before tasks are read: see makeToday)
   const { L, UserError, need, isoDate, uuid, text, S, str, num, DATE } = h;
   const bool = d => ({ type: 'boolean', description: d });
   const pct = (a, b) => (b ? Math.round(a / b * 100) : 0);
@@ -60,7 +61,69 @@ module.exports = h => {
     return null;
   }
 
+  /* ---------- repeating tasks ---------- */
+  const DNAMES = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+  const dayLabel = days => { const k = [...days].sort().join(); return k === '1,2,3,4,5,6,7' ? 'Every day' : k === '1,2,3,4,5' ? 'Weekdays' : k === '6,7' ? 'Weekends' : [...days].sort().map(n => DNAMES[n - 1][0].toUpperCase() + DNAMES[n - 1].slice(1)).join(', '); };
+  function daysOf(v) {
+    if (v == null || v === '') return [1, 2, 3, 4, 5, 6, 7];
+    const parts = (Array.isArray(v) ? v : String(v).split(/[,\s]+|\band\b/)).map(x => String(x).trim().toLowerCase()).filter(Boolean);
+    const out = new Set();
+    for (const p of parts) {
+      if (/^(every ?day|daily|all|everyday)$/.test(p)) [1, 2, 3, 4, 5, 6, 7].forEach(n => out.add(n));
+      else if (/^week ?days?$/.test(p)) [1, 2, 3, 4, 5].forEach(n => out.add(n));
+      else if (/^week ?ends?$/.test(p)) [6, 7].forEach(n => out.add(n));
+      else if (/^[1-7]$/.test(p)) out.add(+p);
+      else { const i = DNAMES.findIndex(n => p.startsWith(n)); if (i < 0) throw new UserError(`I don't know the day "${p}". Use day names (Mon…Sun), "every day", "weekdays" or "weekends".`); out.add(i + 1); }
+    }
+    if (!out.size) throw new UserError('Pick at least one day.');
+    return [...out].sort((a, b) => a - b);
+  }
+  const DAYS = { description: 'Which days: "every day" (default), "weekdays", "weekends", or day names like ["Mon","Wed","Fri"]', anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] };
+  const makeToday = async c => { try { await c.db.rpc('ds_make_repeats', { p_user: c.uid, p_day: await c.today() }); } catch (e) { /* not fatal */ } };
+
   return [
+    /* ===================== Repeating tasks ===================== */
+    { name: 'list_repeating_tasks', title: 'List repeating tasks', ro: true,
+      description: 'Tasks that appear on Today by themselves (every day, weekdays or chosen days), with their days and whether they are paused.',
+      inputSchema: S({}),
+      async run(a, c) {
+        const [rows, ps] = await Promise.all([c.db.get('task_repeats?select=id,title,days,paused,project_id,starts_on&order=position'), c.db.get('projects?select=id,name')]);
+        return { repeating_tasks: rows.map(r => ({ id: r.id, title: r.title, days: dayLabel(r.days), paused: r.paused || undefined, project: (ps.find(p => p.id === r.project_id) || {}).name })) };
+      } },
+    { name: 'add_repeating_task', title: 'Add a repeating task',
+      description: "Add a task that appears on Today by itself every day, on weekdays, or on the days given. If today is one of its days it's added to today straight away. Unfinished copies don't carry over; they just come back.",
+      inputSchema: S({ title: str('The task'), days: DAYS, project: str('Project or company (optional)') }, ['title']),
+      async run(a, c) {
+        const days = daysOf(a.days), t0 = await c.today();
+        let project_id = null; if (a.project) project_id = (await findProject(c, a.project)).id;
+        const [r] = await c.db.insert('task_repeats', { user_id: c.uid, title: need(text(a.title, 500), 'title'), days, project_id, starts_on: t0, position: Date.now() / 1000 });
+        await makeToday(c);
+        const onToday = (await c.db.get(`tasks?select=id&repeat_id=eq.${r.id}&period_start=eq.${t0}`)).length > 0;
+        return { added: { id: r.id, title: r.title, days: dayLabel(days) }, on_today: onToday };
+      } },
+    { name: 'update_repeating_task', title: 'Change a repeating task',
+      description: 'Rename a repeating task, change its days, or pause / resume it (use list_repeating_tasks for the id).',
+      inputSchema: S({ id: str('Repeating task id'), title: str('New title'), days: DAYS, paused: bool('true to pause, false to resume') }, ['id']),
+      async run(a, c) {
+        const patch = {};
+        if (a.title != null) patch.title = need(text(a.title, 500), 'title');
+        if (a.days != null) patch.days = daysOf(a.days);
+        if (a.paused != null) patch.paused = !!a.paused;
+        if (!Object.keys(patch).length) throw new UserError('Nothing to change.');
+        const [r] = await c.db.update(`task_repeats?id=eq.${uuid(a.id, 'id')}`, patch);
+        if (!r) throw new UserError('No repeating task with that id.');
+        if (patch.days || patch.paused === false) await makeToday(c);
+        return { updated: { id: r.id, title: r.title, days: dayLabel(r.days), paused: r.paused } };
+      } },
+    { name: 'delete_repeating_task', title: 'Stop a repeating task', destructive: true,
+      description: 'Stop a task repeating. Copies already on past days (and today) stay as normal tasks.',
+      inputSchema: S({ id: str('Repeating task id') }, ['id']),
+      async run(a, c) {
+        const r = await c.db.remove(`task_repeats?id=eq.${uuid(a.id, 'id')}`);
+        if (!r.length) throw new UserError('No repeating task with that id.');
+        return { stopped: r[0].title };
+      } },
+
     /* ===================== Insights ===================== */
     { name: 'get_insights', title: 'Insights', ro: true,
       description: 'The numbers behind the Insights tab, for analysing how you work: task completion (by week, weekday and context), focus time, wins, energy and focus ratings and how energy affects output, stuck tasks that keep slipping, plus your recent daily reflections and wins.',

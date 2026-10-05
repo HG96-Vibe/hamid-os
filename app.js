@@ -242,6 +242,8 @@ async function renderView() {
   const seq = ++renderSeq;
   const views = { today: viewToday, week: viewWeek, month: viewMonth, inbox: viewInbox, insights: viewInsights, history: viewHistory, wins: viewWins, settings: viewSettings };
   try {
+    // today's repeating tasks (repeats.js), once a day, before anything reads the day's list
+    if (window.DS?.repeats) { try { await window.DS.repeats.ensure(); } catch (e) {} }
     const node = await ((window.DS?.views || {})[state.view] || views[state.view])();
     if (seq !== renderSeq) return;
     const y = window.scrollY;

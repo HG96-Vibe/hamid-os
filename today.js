@@ -34,10 +34,12 @@
 
   async function viewToday() {
     const d = state.cursor, ws = weekStart(d), ms = monthStart(addDays(ws, 3));
-    const [tasks, weekT, monthT, wins, rv] = await Promise.all([
+    const [tasks, weekT, monthT, wins, rv, repeats] = await Promise.all([
       fetchTasks('day', d), fetchTasks('week', ws), fetchTasks('month', ms),
-      q(sb.from('wins').select('*').eq('day', d).order('created_at')), fetchReview('day', d)]);
+      q(sb.from('wins').select('*').eq('day', d).order('created_at')), fetchReview('day', d),
+      DS.repeats ? q(sb.from('task_repeats').select('id,days,paused')).catch(() => []) : []]);
     const isToday = d === today();
+    const rpById = Object.fromEntries(repeats.map(r => [r.id, r]));
     const live = tasks.filter(t => t.status !== 'carried');
     const done = live.filter(t => t.status === 'done').length;
     const weekTitle = Object.fromEntries(weekT.map(w => [w.id, w.title]));
@@ -53,6 +55,7 @@
       const chips = [
         parent ? el('span', { class: 'td-up', title: 'Supports this week\u2019s priority' }, `\u2191 ${parent}`) : null,
         DS.proj ? DS.proj.chip(t) : (t.context ? el('span', { class: 'otag' }, t.context) : null),
+        DS.repeats ? DS.repeats.chip(t, rpById[t.repeat_id]) : null,
         t.carry_count >= 1 ? el('span', { class: 'td-chip' + (t.carry_count >= 3 ? ' warn' : ''), title: 'Times this has been carried over' }, `carried \u00d7${t.carry_count}`) : null,
         t.status === 'carried' ? el('span', { class: 'td-chip' }, 'moved on') : null,
         t.remind_at && !t.reminded_at && t.status === 'open' ? el('span', { class: 'td-chip', title: 'Reminder set' }, `\ud83d\udd14 ${hm(t.remind_at)}`) : null,
@@ -73,20 +76,28 @@
 
     /* add strip */
     const ctx = DS.proj.picker({ value: DS.proj.lastPid(), ariaLabel: 'Project for new task' });
-    const input = el('input', { class: 'onew', 'data-add': 'day', placeholder: 'Write a task and press Enter', 'aria-label': 'Add a task', maxlength: '500',
+    // ↻ on: what you type repeats every day from this day (change the days in Repeating tasks)
+    const canRepeat = DS.repeats && d >= today();
+    const rpBtn = canRepeat ? el('button', { type: 'button', class: 'td-rp', 'aria-pressed': String(!!state.rpOn), title: 'Repeat every day',
+      'aria-label': 'Repeat every day', onclick: () => { state.rpOn = !state.rpOn; rpBtn.setAttribute('aria-pressed', String(state.rpOn)); input.placeholder = ph(); input.focus(); } }, '\u21bb') : null;
+    const ph = () => canRepeat && state.rpOn ? 'A task that repeats every day, then Enter' : 'Write a task and press Enter';
+    const input = el('input', { class: 'onew', 'data-add': 'day', placeholder: ph(), 'aria-label': 'Add a task', maxlength: '500',
       onkeydown: async e => {
         if (e.key !== 'Enter' || !input.value.trim()) return;
         e.preventDefault();
         const title = input.value.trim(); input.value = '';
         DS.proj.saveLast(ctx.value);
-        await q(sb.from('tasks').insert({ user_id: uid(), horizon: 'day', period_start: d, title, project_id: ctx.value || null, position: Date.now() / 1000 }));
+        if (canRepeat && state.rpOn) {
+          await DS.repeats.create({ title, days: [1, 2, 3, 4, 5, 6, 7], project_id: ctx.value || null, starts_on: d });
+          toast(d === today() ? 'Added. It\u2019ll be here every day.' : `Added. It starts on ${fmt(d, { weekday: 'long' })} and repeats every day.`);
+        } else await q(sb.from('tasks').insert({ user_id: uid(), horizon: 'day', period_start: d, title, project_id: ctx.value || null, position: Date.now() / 1000 }));
         state.focusAdd = 'day';
         refresh();
       } });
-    list.append(el('div', { class: 'td-add' }, el('span', { class: 'td-plus', 'aria-hidden': 'true' }, '+'), input, ctx));
+    list.append(el('div', { class: 'td-add' }, el('span', { class: 'td-plus', 'aria-hidden': 'true' }, '+'), input, rpBtn, ctx));
 
-    /* close-out card */
-    const openTasks = tasks.filter(t => t.status === 'open');
+    /* close-out card (repeating tasks aren't carried: they come back by themselves) */
+    const openTasks = tasks.filter(t => t.status === 'open' && !t.repeat_id);
     // Daily notes: saved automatically as you type (stored on the day's review, without closing the day).
     const noteStatus = el('span', { class: 'td-note-status', 'aria-live': 'polite' }, rv?.notes ? 'Saved' : '');
     let noteTimer = null, lastSaved = rv?.notes || '';
@@ -144,7 +155,9 @@
         el('div', { class: 'head' }, el('h1', {}, dayName(d)),
           el('button', { class: 'arrow', 'aria-label': 'Previous day', onclick: () => DS.go('today', addDays(d, -1)) }, '\u2039'),
           el('button', { class: 'arrow', 'aria-label': 'Next day', onclick: () => DS.go('today', addDays(d, 1)) }, '\u203a'),
-          !isToday ? el('button', { class: 'pill', onclick: () => DS.go('today', today()) }, 'Back to today') : null),
+          !isToday ? el('button', { class: 'pill', onclick: () => DS.go('today', today()) }, 'Back to today') : null,
+          DS.repeats ? el('button', { class: 'pill td-rpbtn', title: 'Tasks that appear by themselves', onclick: () => DS.repeats.open() },
+            '\u21bb Repeating' + (repeats.filter(r => !r.paused).length ? ` (${repeats.filter(r => !r.paused).length})` : '')) : null),
         el('p', { class: 'meta' }, live.length ? `${done} of ${live.length} done${rv?.closed_at ? ' \u00b7 day closed' : ''}. Click a task to open it.` : 'A blank page.'),
         list, closeout),
       el('aside', { class: 'td-side' },

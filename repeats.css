@@ -1,0 +1,58 @@
+/* Repeating tasks: the ↻ chip, the add-strip toggle, and the "Repeating tasks" window */
+.rp-chip{border:0;cursor:pointer;font:inherit;font-size:12px;font-weight:600;color:#6d28d9;background:#ede9fe}
+.rp-chip:hover{background:#ddd6fe}
+.td-row.s-done .rp-chip{background:rgba(255,255,255,.2);color:#fff}
+.td-rp{width:34px;height:34px;flex:0 0 34px;border-radius:50%;border:1.5px solid rgba(251,191,36,.55);background:transparent;color:var(--amber);font:700 17px/1 var(--ui);cursor:pointer;display:grid;place-items:center;transition:background .15s,color .15s}
+.td-rp:hover{background:rgba(251,191,36,.14)}
+.td-rp[aria-pressed="true"]{background:var(--amber);color:#1e1b4b;border-color:var(--amber)}
+.td-rpbtn{margin-left:auto}
+
+dialog.rp-dlg{width:min(640px,calc(100vw - 32px));max-height:calc(100dvh - 48px);padding:0;border:0;border-radius:18px;background:#fbfbf8;color:#1e1b4b;box-shadow:0 24px 70px rgba(8,5,30,.5)}
+dialog.rp-dlg::backdrop{background:rgba(10,8,35,.55)}
+.rp-box{display:grid;gap:14px;padding:22px 22px 20px;color:#1e1b4b}
+.rp-box .meta{color:#5b5f86}
+.rp-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.rp-head h2{margin:0;font:800 22px var(--display);color:#1e1b4b}
+.rp-x{border:0;background:#efeff5;color:#1e1b4b;width:34px;height:34px;border-radius:50%;font-size:20px;line-height:1;cursor:pointer}
+.rp-x:hover{background:#e3e3ee}
+.rp-add{display:grid;gap:10px;background:#fff;border:1px solid #e6e6ef;border-radius:14px;padding:14px}
+.rp-add .lbl{display:block;font-size:13px;font-weight:700;color:#5b5f86;margin-bottom:6px}
+.rp-box .field,.rp-box select{background:#fff;color:#1e1b4b;border:1px solid #d9d9e6}
+.rp-addrow{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+.rp-add .actions{display:flex;justify-content:flex-end;margin:0}
+.rp-days{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.rp-d{width:34px;height:32px;border-radius:9px;border:1px solid #d9d9e6;background:#fff;color:#5b5f86;font:700 12.5px var(--ui);cursor:pointer}
+.rp-d[aria-pressed="true"]{background:#7c3aed;border-color:#7c3aed;color:#fff}
+.rp-sep{width:1px;height:20px;background:#e0e0ea;margin:0 3px}
+.rp-p{border:1px solid #d9d9e6;background:#fff;color:#5b5f86;border-radius:999px;padding:6px 11px;font:600 12.5px var(--ui);cursor:pointer}
+.rp-p[aria-pressed="true"]{border-color:#7c3aed;color:#6d28d9;background:#f5f3ff}
+.rp-d:focus-visible,.rp-p:focus-visible,.rp-x:focus-visible{outline:2px solid #7c3aed;outline-offset:2px}
+.rp-list{list-style:none;margin:0;padding:0;display:grid;gap:8px;max-height:min(420px,45dvh);overflow:auto}
+.rp-empty{color:#5b5f86;font-size:14.5px;padding:6px 2px}
+.rp-row{display:grid;gap:7px;background:#fff;border:1px solid #e6e6ef;border-left:4px solid #7c3aed;border-radius:12px;padding:10px 12px}
+.rp-row.paused{border-left-color:#c4c4d4;opacity:.75}
+.rp-row.rp-hit{box-shadow:0 0 0 2px #7c3aed}
+.rp-top{display:flex;align-items:center;gap:8px}
+.rp-ic{color:#7c3aed;font-weight:800}
+.rp-name{flex:1;min-width:0;border:0;border-bottom:1px dashed transparent;background:transparent;color:#1e1b4b;font:700 15.5px var(--ui);padding:3px 2px}
+.rp-name:hover{border-bottom-color:#d9d9e6}
+.rp-name:focus{outline:none;border-bottom-color:#7c3aed}
+.rp-top .btn{padding:5px 11px;font-size:13px}
+.rp-sub{color:#5b5f86;font-size:12.5px}
+@media (max-width:560px){
+  .rp-box{padding:18px 16px}
+  .rp-top{flex-wrap:wrap}
+  .rp-name{flex-basis:100%}
+  .rp-addrow{flex-direction:column;align-items:stretch}
+}
+/* keep the window's own look whatever the app theme */
+dialog.rp-dlg{overflow:auto}
+.rp-list>li.rp-row{display:grid!important;grid-template-columns:minmax(0,1fr)!important;grid-auto-flow:row!important;align-items:start}
+.rp-row>*{min-width:0}
+.rp-box .btn{background:#fff;color:#1e1b4b;border:1px solid #d9d9e6;box-shadow:none}
+.rp-box .btn:hover{border-color:#7c3aed}
+.rp-box .btn.primary{background:linear-gradient(180deg,var(--amber-2),var(--amber-3));color:#fff;border:0}
+.rp-box .btn.danger{color:#b91c1c;border-color:#f3c4c4}
+.rp-box .btn.danger:hover{background:#fef2f2}
+.rp-box h2{color:#1e1b4b;font-size:22px;letter-spacing:-.01em}
+@media (max-width:560px){ .td-rpbtn{margin-left:0} }

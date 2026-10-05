@@ -146,8 +146,15 @@ Add custom connector with `https://daily-sheet-six.vercel.app/mcp`, then sign in
 - Tools: overview, money report, payments, categories / budgets, direct debits (add, change, tick paid, delete),
   loans and lending, net worth, tasks (notes, progress, scheduling on a day), projects (add, update), Insights
   (analysis, wins, daily check-in), Inbox thoughts (add, edit, sort, delete), documents (search, read, create, edit
-  with the old version kept in history) and Listen (add YouTube links). Deletes are marked destructive.
+  with the old version kept in history), Listen (add YouTube links) and repeating tasks. Deletes are marked destructive.
   The extra tools live in api/_more.js.
 - Every call runs as you with a 2FA Supabase session, so the same owner-only RLS applies.
 - `MCP_SECRET` (Vercel env, production only, never in the repo) seals sign-in codes and refresh tokens.
 - Disconnect: remove the connector in Claude, or Home → "Sign out everywhere else".
+
+## Repeating tasks (repeats.js, supabase/migrations/20261015_task_repeats.sql)
+
+Tasks set once (every day, weekdays or chosen days) appear on Today by themselves. `ds_make_repeats(user, day)`
+adds the day's copies at the 4am rollover and whenever the app opens. Each repeat is made at most once a day
+(`last_made`), so a deleted or moved copy doesn't come back. Unfinished copies aren't carried over by the rollover.
+Manage them from Today → ↻ Repeating, the ↻ button in the add strip, or a task's ⋯ menu → Repeat this task.

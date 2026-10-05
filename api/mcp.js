@@ -12,7 +12,7 @@ const INSTRUCTIONS = `Hamid OS is Hamid's personal operating system: daily / wee
 Capital has three books: Personal and the companies (Augustova, PCTR). Amounts are in pounds (GBP). Money out is spending; money in is income.
 Direct debits, loans and lending are a separate record and are not counted in money in / out until a direct debit is ticked as paid.
 "To play with" = this month's money in − money out − direct debits still expected this month (Personal only).
-When asked to analyse how he's doing, use get_insights. A thought to sort later goes in the Inbox (add_to_inbox).
+When asked to analyse how he's doing, use get_insights. A thought to sort later goes in the Inbox (add_to_inbox). Something done every day (or on set days) is a repeating task (add_repeating_task), not a one-off task.
 When adding something, default to the Personal book unless a company is named. Use the list tools first to find ids before updating or deleting.`;
 
 /* ---------- context for one request ---------- */
@@ -85,6 +85,7 @@ const TOOLS = [
     inputSchema: S({}),
     async run(a, c) {
       const t0 = await c.today(), ms = L.monthStart(t0), me = L.monthEnd(t0), bk = await c.book();
+      await c.db.rpc('ds_make_repeats', { p_user: c.uid, p_day: t0 }).catch(() => 0);
       const [tx, planned, tasks] = await Promise.all([
         c.db.get(`money_tx?select=book_id,amount_pence,import_key&occurred_on=gte.${ms}&occurred_on=lte.${me}&limit=50000`),
         c.db.get(`money_planned?select=*&book_id=eq.${bk.id}`),
@@ -198,10 +199,11 @@ const TOOLS = [
     async run(a, c) {
       const t0 = await c.today(), w = String(a.when || 'today').toLowerCase();
       const [horizon, period] = w === 'week' ? ['week', L.weekStart(t0)] : w === 'month' ? ['month', L.monthStart(t0)] : ['day', w === 'today' ? t0 : need(isoDate(a.when, 'when'), 'when')];
-      const [rows, projects] = await Promise.all([c.db.get(`tasks?select=id,title,status,context,project_id,scheduled_on&horizon=eq.${horizon}&period_start=eq.${period}&status=neq.carried${a.include_dropped ? '' : '&status=neq.dropped'}&order=position`),
+      if (period === t0) await c.db.rpc('ds_make_repeats', { p_user: c.uid, p_day: t0 }).catch(() => 0);
+      const [rows, projects] = await Promise.all([c.db.get(`tasks?select=id,title,status,context,project_id,scheduled_on,repeat_id&horizon=eq.${horizon}&period_start=eq.${period}&status=neq.carried${a.include_dropped ? '' : '&status=neq.dropped'}&order=position`),
         c.db.get('projects?select=id,name')]);
       const pn = id => (projects.find(p => p.id === id) || {}).name;
-      return { horizon, period_start: period, tasks: rows.map(t => ({ id: t.id, title: t.title, status: t.status, context: t.context || undefined, project: pn(t.project_id), scheduled_on: t.scheduled_on || undefined })) };
+      return { horizon, period_start: period, tasks: rows.map(t => ({ id: t.id, title: t.title, status: t.status, repeats: t.repeat_id ? true : undefined, context: t.context || undefined, project: pn(t.project_id), scheduled_on: t.scheduled_on || undefined })) };
     } },
   { name: 'list_projects', title: 'List projects', ro: true,
     description: 'Your companies (Augustova, PCTR), Personal, and the projects under them, with goals.',
