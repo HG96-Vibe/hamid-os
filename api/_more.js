@@ -129,6 +129,61 @@ module.exports = h => {
         return { stopped: r[0].title };
       } },
 
+    /* ===================== Work done by company / project ===================== */
+    { name: 'done_by_project', title: 'Work done by project', ro: true,
+      description: "What got done (or dropped) per company and project over a period: daily tasks, weekly priorities and monthly outcomes, with the tasks themselves. Good for 'what did I get done for PCTR in September?' or a monthly summary. Covers the last six months. Repeating tasks are counted per day but listed once.",
+      inputSchema: S({ period: { type: 'string', enum: ['this_week', 'this_month', 'last_month', 'last_3_months', 'last_6_months'], description: 'Default this_month' },
+        from: DATE('Or a start date (overrides period)'), to: DATE('End date, default today'),
+        company: str('Only this company or Personal (optional)'), project: str('Only this project (optional)'),
+        status: { type: 'string', enum: ['done', 'dropped'], description: 'Default done' }, list_tasks: bool('Include the task titles (default true)') }),
+      async run(a, c) {
+        const t0 = await c.today(), ms = L.monthStart(t0), lo = L.addMonths(ms, -5);
+        let [from, to] = { this_week: [L.weekStart(t0), t0], last_month: [L.addMonths(ms, -1), L.addDays(ms, -1)], last_3_months: [L.addMonths(ms, -2), t0], last_6_months: [lo, t0] }[a.period] || [ms, t0];
+        if (a.from) { from = isoDate(a.from, 'from'); to = isoDate(a.to, 'to') || t0; }
+        if (from < lo) from = lo; if (to > t0) to = t0;
+        const status = a.status === 'dropped' ? 'dropped' : 'done';
+        const tz = ((await c.db.get('settings?select=tz&limit=1').catch(() => []))[0] || {}).tz || 'Europe/London';
+        const dayOf = ts => new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ts));
+        const rows = [];
+        for (let i = 0; ; i += 1000) {
+          const page = await c.db.get(`tasks?select=id,title,horizon,period_start,project_id,repeat_id,completed_at&status=eq.${status}&period_start=gte.${L.addDays(from, -31)}&period_start=lte.${to}&order=period_start.desc,id&offset=${i}&limit=1000`);
+          rows.push(...page); if (page.length < 1000) break;
+        }
+        const tasks = rows.map(t => ({ ...t, when: status === 'done' && t.completed_at ? dayOf(t.completed_at) : t.period_start })).filter(t => t.when >= from && t.when <= to);
+        const ps = await c.db.get('projects?select=id,name,parent_id,kind');
+        const byId = Object.fromEntries(ps.map(p => [p.id, p])), rootOf = p => (p && p.parent_id ? byId[p.parent_id] : p);
+        let only = null;
+        if (a.project) only = new Set([(await findProject(c, a.project)).id]);
+        else if (a.company) { const r = await findProject(c, a.company, true); only = new Set([r.id, ...ps.filter(p => p.parent_id === r.id).map(p => p.id)]); }
+        const LV = { day: 'task', week: 'weekly priority', month: 'monthly outcome' };
+        const groups = new Map(); let none = [];
+        for (const t of tasks) {
+          if (only && !only.has(t.project_id)) continue;
+          const p = byId[t.project_id], r = rootOf(p);
+          if (!p || !r) { none.push(t); continue; }
+          const g = groups.get(r.id) || groups.set(r.id, { company: r.name, total: 0, parts: new Map() }).get(r.id);
+          const k = p.id === r.id ? `${r.name} (general)` : p.name;
+          (g.parts.get(k) || g.parts.set(k, []).get(k)).push(t); g.total++;
+        }
+        const listOf = items => {
+          const reps = new Map(), out = [];
+          for (const t of items.slice().sort((x, y) => (x.when < y.when ? 1 : -1))) {
+            if (!t.repeat_id) { out.push({ date: t.when, title: t.title, level: LV[t.horizon] }); continue; }
+            const r = reps.get(t.repeat_id); if (r) r.days++; else { const e = { title: t.title, level: 'repeating task', days: 1 }; reps.set(t.repeat_id, e); out.push(e); }
+          }
+          return out;
+        };
+        const want = a.list_tasks !== false;
+        const out = [...groups.values()].sort((x, y) => y.total - x.total).map(g => ({ company: g.company, [status]: g.total,
+          projects: [...g.parts.entries()].sort((x, y) => y[1].length - x[1].length).map(([name, items]) => ({ project: name, [status]: items.length,
+            by_level: Object.fromEntries([['day', 'tasks'], ['week', 'weekly priorities'], ['month', 'monthly outcomes']].map(([h, n]) => [n, items.filter(t => t.horizon === h).length]).filter(x => x[1])),
+            tasks: want ? listOf(items) : undefined })) }));
+        const total = out.reduce((n, g) => n + g[status], 0) + (only ? 0 : none.length);
+        return { period: `${from} to ${to}`, status, total, companies: out,
+          no_project: only || !none.length ? undefined : { [status]: none.length, tasks: want ? listOf(none) : undefined },
+          note: 'History covers the last six months.' };
+      } },
+
     /* ===================== Insights ===================== */
     { name: 'get_insights', title: 'Insights', ro: true,
       description: 'The numbers behind the Insights tab, for analysing how you work: task completion (by week, weekday and context), focus time, wins, energy and focus ratings and how energy affects output, stuck tasks that keep slipping, plus your recent daily reflections and wins.',

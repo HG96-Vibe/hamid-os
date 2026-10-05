@@ -613,11 +613,11 @@ async function viewMonth() {
 }
 
 async function viewHistory() {
-  const from = addDays(today(), -120);
+  const from = addMonths(monthStart(today()), -5); // the last six months (this month and the five before)
   const [dayT, rvs, wins] = await Promise.all([
-    q(sb.from('tasks').select('period_start,status').eq('horizon', 'day').gte('period_start', from).lte('period_start', today()).limit(5000)),
+    fetchAll(() => sb.from('tasks').select('id,period_start,status').eq('horizon', 'day').gte('period_start', from).lte('period_start', today()).order('period_start').order('id')),
     q(sb.from('reviews').select('period_start,energy,focus').eq('horizon', 'day').gte('period_start', from)),
-    q(sb.from('wins').select('day').gte('day', from))]);
+    fetchAll(() => sb.from('wins').select('id,day').gte('day', from).order('day').order('id'))]);
   const byDay = {};
   const get = d => byDay[d] ||= { total: 0, done: 0, carried: 0, wins: 0, rv: null };
   for (const t of dayT) { const s = get(t.period_start); if (t.status === 'carried') s.carried++; else { s.total++; if (t.status === 'done') s.done++; } }
@@ -640,7 +640,7 @@ async function viewHistory() {
   const totals = days.reduce((a, d) => (a.total += byDay[d].total, a.done += byDay[d].done, a), { total: 0, done: 0 });
   return el('div', {},
     el('div', { class: 'head' }, el('h1', {}, 'History')),
-    el('p', { class: 'meta' }, days.length ? `Last 120 days: ${totals.done} of ${totals.total} tasks done (${totals.total ? Math.round(totals.done / totals.total * 100) : 0}%).` : 'Your days will show up here once you start writing them.'),
+    el('p', { class: 'meta' }, days.length ? `Last 6 months: ${totals.done} of ${totals.total} tasks done (${totals.total ? Math.round(totals.done / totals.total * 100) : 0}%).` : 'Your days will show up here once you start writing them.'),
     el('div', { class: 'search' }, sIn, el('button', { class: 'btn', onclick: doSearch }, 'Search')),
     results,
     days.length ? el('div', { class: 'histwrap' }, el('table', { class: 'hist' },
@@ -1251,7 +1251,7 @@ setInterval(tickTimer, 1000);
 // Small extension hook so later features can live in their own files.
 window.DS = { sb, q, el, state, uid, toast, refresh, go, setTask, carry, fetchTasks, fetchReview, reviewForm, taskList, taskDetail,
   startFocus, openDrawer, closeDrawer, renderDrawer, pad, iso, parse, today, addDays, weekStart, monthStart, addMonths, fmt,
-  dayName, shortDay, monthName, timeAgo, ctxColor, CONTEXTS, views: {} };
+  dayName, shortDay, monthName, timeAgo, ctxColor, CONTEXTS, views: {}, base: { history: viewHistory, insights: viewInsights } };
 { const h = location.hash.slice(1); if (VIEWS.some(([k]) => k === h)) state.view = h; }
 store('ds_seen', today());
 window.addEventListener('online', () => { if (document.querySelector('.ls-offline')) route(); });

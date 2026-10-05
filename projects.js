@@ -224,6 +224,7 @@
         el('section', { class: 'pj-sec' }, el('h3', {}, 'Recently done'),
           done.length ? el('ul', { class: 'pj-log' }, done.map(t => el('li', {},
             el('span', {}, t.title), el('time', {}, fmt(t.period_start, { day: 'numeric', month: 'short' }))))) : el('p', { class: 'pj-none' }, 'Nothing finished in the last 60 days.'))),
+      DS.worklog ? DS.worklog.projectLog(p) : null,
       DS.create ? DS.create.forProject(family(p.id), p.id) : null,
       isRoot(p) && kids(p.id).length ? el('section', { class: 'section' }, el('h2', {}, 'Projects in ' + p.name),
         el('div', { class: 'pj-links' }, kids(p.id).map(k => el('button', { class: 'pill pj-link', style: `--pj:${color(k.id)}`, onclick: () => openProject(k.id) }, k.name)))) : null);

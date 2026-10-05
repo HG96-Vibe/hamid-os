@@ -158,3 +158,11 @@ Tasks set once (every day, weekdays or chosen days) appear on Today by themselve
 adds the day's copies at the 4am rollover and whenever the app opens. Each repeat is made at most once a day
 (`last_made`), so a deleted or moved copy doesn't come back. Unfinished copies aren't carried over by the rollover.
 Manage them from Today → ↻ Repeating, the ↻ button in the add strip, or a task's ⋯ menu → Repeat this task.
+
+## History by project (worklog.js)
+
+History has By day and By project. By project counts done (or dropped) tasks, weekly priorities and monthly
+outcomes per company and project for a period (this month by default; at most the last six months), with
+untagged work under "No project" where it can be tagged. Carried copies don't count; repeating tasks fold
+into one line. Project pages show "Everything done" (six months), and Insights has "Where your work went".
+The connector's `done_by_project` tool answers the same questions.
