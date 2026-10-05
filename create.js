@@ -480,7 +480,7 @@
     const paths = [d.file.path, ...((d.file.versions || []).map(v => v.path))].filter(Boolean);
     try { await fileStore().remove(paths); } catch (e) {}
   }
-  const html = () => loadScript('/create-html.js?v=1').then(() => window.CreateHTML);
+  const html = () => loadScript('/create-html.js?v=4').then(() => window.CreateHTML);
   const ACCEPT = '.docx,.doc,.pdf,.ppt,.pptx,.html,.htm,.zip,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-powerpoint,application/msword,text/html,application/zip';
   // Upload: files (Word, PDF, PowerPoint, HTML, or a .zip of an HTML page and its files), or a whole folder
   function pickUpload(e, projectId) {
@@ -656,6 +656,39 @@
   /* ---------- an HTML page: shown in a sealed frame, with versions ---------- */
   // The page opens over the whole browser window (outside the app's column and display zoom), like opening the file
   // itself; Full screen then hides the browser's bars too. Behind it, the usual details (project, folder, download).
+  // HTML page → PDF, downloaded straight away (see CreateHTML.toPdf)
+  let pdfBusy = false;
+  async function htmlPdf(doc, mode, btn, path) {
+    if (pdfBusy) return;
+    pdfBusy = true;
+    const label = btn && btn.querySelector('span'), was = label ? label.textContent : '';
+    const set = t => { if (label) label.textContent = t; };
+    if (btn) btn.disabled = true;
+    set('Making PDF\u2026');
+    try {
+      const H = await html();
+      const { data, error } = await fileStore().download(path || doc.file.path);
+      if (error || !data) throw new Error('Couldn\u2019t open the page. Check your connection.');
+      const blob = await H.toPdf(await data.text(), { mode, onProgress: (d, n) => set(n > 1 ? `Making PDF\u2026 ${Math.min(d + 1, n)}/${n}` : 'Making PDF\u2026') });
+      const name = (doc.title || 'Page').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 120) + (mode === 'a4' ? ' (A4)' : '') + '.pdf';
+      const a = el('a', { href: URL.createObjectURL(blob), download: name }); document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+      toast(`PDF downloaded (${fileSize(blob.size)}).`);
+    } catch (e) { toast(e && e.message ? e.message : 'Couldn\u2019t make the PDF. Try again.'); }
+    finally { pdfBusy = false; if (btn) btn.disabled = false; set(was); }
+  }
+  function pdfMenu(doc, btn, path) {
+    document.querySelector('.cr-pdfmenu')?.remove();
+    const pick = mode => { m.remove(); htmlPdf(doc, mode, btn, path && path()); };
+    const m = el('div', { class: 'cr-hmore cr-pdfmenu', role: 'menu' },
+      el('button', { type: 'button', role: 'menuitem', onclick: () => pick('long') }, el('span', { class: 'cr-pdfopt' }, el('b', {}, 'One long page'), el('small', {}, 'Looks exactly like the screen'))),
+      el('button', { type: 'button', role: 'menuitem', onclick: () => pick('a4') }, el('span', { class: 'cr-pdfopt' }, el('b', {}, 'A4 pages'), el('small', {}, 'For printing or sending'))));
+    btn.parentElement.append(m);
+    const close = e => { if (!m.contains(e.target) && !btn.contains(e.target)) { m.remove(); document.removeEventListener('pointerdown', close, true); } };
+    document.addEventListener('pointerdown', close, true);
+    m.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); m.remove(); btn.focus(); } });
+    m.querySelector('button').focus();
+  }
   async function htmlViewer(doc, body, root, back) {
     const H = await html();
     const st = { safe: false, ver: null }; // ver: an earlier version being looked at
@@ -667,7 +700,9 @@
     body.replaceChildren(el('div', { class: 'cr-fcard cr-hcard' },
       el('span', { class: 'cr-ftype big cr-ft-html' }, 'HTML page'),
       el('p', {}, 'Opens over the whole window. Its own code runs there, sealed off from Hamid OS.'),
-      el('button', { class: 'btn primary', type: 'button', onclick: () => open() }, icon('expand', 16), ' Open page')));
+      el('div', { class: 'cr-hcardacts' },
+        el('button', { class: 'btn primary', type: 'button', onclick: () => open() }, icon('expand', 16), ' Open page'),
+        el('div', { class: 'cr-hmorewrap' }, el('button', { class: 'btn', type: 'button', 'aria-haspopup': 'menu', onclick: e => pdfMenu(doc, e.currentTarget) }, icon('download', 16), el('span', {}, 'Download as PDF'))))));
 
     function open() {
       if (layer && layer.isConnected) return;
@@ -703,10 +738,12 @@
       } }, icon('expand', 15), el('span', {}, 'Full screen')) : null;
       const onFs = () => { const on = !!(document.fullscreenElement || document.webkitFullscreenElement); layer.classList.toggle('fs', on); if (fullBtn) fullBtn.lastChild.textContent = on ? 'Exit full screen' : 'Full screen'; };
       const tabBtn = el('button', { type: 'button', class: 'cr-hb', title: 'Open it in a new tab', onclick: () => { if (src) H.openTab(src, doc.title || 'HTML page', st.safe); } }, icon('external', 15), el('span', {}, 'New tab'));
+      const pdfBtn = el('button', { type: 'button', class: 'cr-hb cr-hpdf', title: 'Download this page as a PDF', 'aria-haspopup': 'menu',
+        onclick: e => { e.stopPropagation(); more.hidden = true; pdfMenu(doc, pdfBtn, () => (st.ver == null ? doc.file.path : vs()[st.ver].path)); } }, icon('download', 15), el('span', {}, 'PDF'));
       const more = el('div', { class: 'cr-hmore', role: 'menu', hidden: true },
         el('button', { type: 'button', role: 'menuitem', onclick: () => { more.hidden = true; replaceIt(); } }, icon('upload', 15), ' Upload a new version'),
         el('button', { type: 'button', role: 'menuitem', onclick: () => { more.hidden = true; editableCopy(); } }, icon('edit', 15), ' Make an editable copy'),
-        el('button', { type: 'button', role: 'menuitem', onclick: () => { more.hidden = true; download(); } }, icon('download', 15), ' Download'),
+        el('button', { type: 'button', role: 'menuitem', onclick: () => { more.hidden = true; download(); } }, icon('download', 15), ' Download the HTML file'),
         el('button', { type: 'button', role: 'menuitem', onclick: () => { more.hidden = true; close(); } }, icon('edit', 15), ' Details: project, folder, Trash'));
       const moreBtn = el('button', { type: 'button', class: 'cr-hb', 'aria-haspopup': 'menu', 'aria-label': 'More', title: 'More', onclick: e => { e.stopPropagation(); more.hidden = !more.hidden; if (!more.hidden) more.querySelector('button').focus(); } }, '\u22ef');
       const close = () => {
@@ -717,6 +754,7 @@
       const onKey = e => {
         if (e.key !== 'Escape' || document.querySelector('dialog[open]')) return;
         if (!more.hidden) { more.hidden = true; moreBtn.focus(); return; }
+        if (document.querySelector('.cr-pdfmenu')) { document.querySelector('.cr-pdfmenu').remove(); return; }
         if (document.fullscreenElement || document.webkitFullscreenElement) return; // the browser leaves full screen itself
         e.preventDefault(); close();
       };
@@ -725,7 +763,7 @@
           el('button', { type: 'button', class: 'cr-hb cr-hback', title: 'Back to Documents', 'aria-label': 'Back to Documents', onclick: () => { close(); back(); } }, icon('back', 16), el('span', { class: 'cr-hbl' }, 'Documents')),
           el('span', { class: 'cr-ftype cr-ft-html' }, 'HTML'),
           el('b', { class: 'cr-htitle', title: doc.title || '' }, doc.title || 'HTML page'),
-          el('div', { class: 'cr-hacts' }, verSel, restore, safeBtn, fullBtn, tabBtn, el('div', { class: 'cr-hmorewrap' }, moreBtn, more)),
+          el('div', { class: 'cr-hacts' }, verSel, restore, safeBtn, fullBtn, tabBtn, el('div', { class: 'cr-hmorewrap' }, pdfBtn), el('div', { class: 'cr-hmorewrap' }, moreBtn, more)),
           el('button', { type: 'button', class: 'cr-hb cr-hx', 'aria-label': 'Close the page', title: 'Close (Esc)', onclick: close }, '\u00d7')),
         stage);
       async function replaceIt() {

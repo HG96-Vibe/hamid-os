@@ -173,5 +173,7 @@ Create (and project pages) can upload HTML: a single .html file, a folder, or a 
 together in the browser into one self-contained page (styles, scripts, pictures and fonts written into it), kept as
 one .html file in the private doc-files bucket with up to ten earlier versions. Pages open in a sealed frame
 (sandbox without same-origin): their code runs but can't reach Hamid OS or the sign-in; Safe view turns code off.
-Also: full screen, new tab (still sealed), new version / restore, and an editable copy as a normal document.
+Also: full screen, new tab (still sealed), new version / restore, an editable copy as a normal document, and
+Download as PDF (one long page like the screen, or A4 pages broken between blocks). The PDF is drawn from a hidden
+copy at 1280px wide inside its own sealed frame (html-to-image + jsPDF from cdnjs), so it looks the same from a phone.
 The connector can save_html_page (new, or a new version by id) and read_html_page.

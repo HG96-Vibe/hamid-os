@@ -393,3 +393,13 @@ html .cr-hlayer{zoom:1!important;position:fixed;inset:0;z-index:2000;display:fle
   .cr-hbl{display:none}
   .cr-hmore{position:fixed;right:10px;left:10px;top:100px;width:auto}
 }
+/* HTML → PDF */
+.cr-hcardacts{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
+.cr-hcardacts .btn{display:inline-flex;align-items:center;gap:6px}
+.cr-pdfmenu{width:260px}
+.cr-hcard .cr-pdfmenu{left:0;right:auto}
+.cr-pdfopt{display:grid;gap:1px}
+.cr-pdfopt b{font:700 14px var(--ui)}
+.cr-pdfopt small{font:500 12px var(--ui);color:#5b5f86}
+.cr-hb:disabled,.cr-hcardacts .btn:disabled{opacity:.75;cursor:progress}
+@media (max-width:760px){ .cr-pdfmenu{position:fixed;left:10px;right:10px;top:100px;width:auto} }

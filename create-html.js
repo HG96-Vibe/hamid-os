@@ -194,5 +194,85 @@
     return out;
   }
 
-  window.CreateHTML = { bundle, unzip, textOf, titleIn, editable, frame, openTab, SANDBOX };
+  /* ---------- PDF ----------
+     A hidden copy of the page is drawn at desktop width inside its own sealed frame. There it switches off
+     animations, scrolls through once (so anything that appears on scroll is shown), then draws itself slice by slice
+     and puts the slices into a PDF, which it hands back. "long": one tall page that looks just like the screen;
+     "a4": A4 pages for printing, broken between blocks rather than through them. */
+  const LIBS = ['https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.13/html-to-image.min.js', 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/4.2.1/jspdf.umd.min.js'];
+  const KIT = '<style id="__hos_pdf">*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;animation-iteration-count:1!important;transition:none!important;scroll-behavior:auto!important;caret-color:transparent!important}</style>'
+    + '<script>(function(){'
+    + 'var LIBS=' + JSON.stringify(LIBS) + ';'
+    + 'function load(u){return new Promise(function(ok,bad){var s=document.createElement("script");s.src=u;s.onload=ok;s.onerror=function(){bad(new Error("Couldn’t load the PDF maker. Check your connection."))};document.head.appendChild(s)})}'
+    + 'var wait=function(ms){return new Promise(function(r){setTimeout(r,ms)})};'
+    + 'function say(m){parent.postMessage(Object.assign({hosPdf:1},m),"*")}'
+    + 'var ready=new Promise(function(r){if(document.readyState==="complete")r();else addEventListener("load",function(){r()})}).then(function(){return Promise.all(LIBS.map(load))});'
+    + 'ready.then(function(){say({ready:1})},function(e){say({error:e.message})});'
+    + 'addEventListener("message",function(ev){if(ev.source!==parent||!ev.data||ev.data.hosPdf!=="make")return;make(ev.data.mode).catch(function(e){say({error:(e&&e.message)||"Couldn’t make the PDF."})})});'
+    + 'async function make(mode){'
+    +   'await ready;if(document.fonts&&document.fonts.ready)await document.fonts.ready;'
+    // scroll through once so anything that appears on scroll is shown, then back to the top
+    +   'var de=document.documentElement,vh=innerHeight;for(var y=0;y<de.scrollHeight;y+=Math.round(vh*.8)){scrollTo(0,y);await wait(60)}scrollTo(0,de.scrollHeight);await wait(150);scrollTo(0,0);await wait(250);'
+    +   'var W=Math.max(de.scrollWidth,innerWidth),H=Math.max(de.scrollHeight,document.body?document.body.scrollHeight:0);'
+    +   'var bg=getComputedStyle(document.body).backgroundColor;if(!bg||bg==="rgba(0, 0, 0, 0)"||bg==="transparent"){bg=getComputedStyle(de).backgroundColor;if(!bg||bg==="rgba(0, 0, 0, 0)"||bg==="transparent")bg="#ffffff"}'
+    +   'var J=window.jspdf.jsPDF,PT=0.75,slices=[];'
+    +   'if(mode==="a4"){'
+    // A4: the page height in screen pixels, and the best place to break near the bottom of each page
+    +     'var pw=595.28,ph=841.89,pagePx=Math.floor(ph/(pw/W)),cand=[],boxes=[];'
+    // every block's top and bottom is a possible break; a break is "clean" if it doesn't cut through any block that would fit on a page
+    +     'document.body.querySelectorAll("*").forEach(function(n){var r=n.getBoundingClientRect();if(r.height>0&&r.width>W*0.15&&r.height<pagePx*0.95){var t=Math.round(r.top+scrollY),b=Math.round(r.bottom+scrollY);boxes.push([t,b]);cand.push(t,b)}});'
+    +     'cand=cand.filter(function(v,i,a){return a.indexOf(v)===i}).sort(function(a,b){return a-b});'
+    +     'var clean=function(y){for(var j=0;j<boxes.length;j++){if(boxes[j][0]<y-1&&boxes[j][1]>y+1)return false}return true};'
+    +     'for(var s=0;s<H-2;){var t=s+pagePx,best=t,fall=null;if(t<H){for(var i=cand.length-1;i>=0;i--){var cy=cand[i];if(cy>t)continue;if(cy<=s+pagePx*0.5)break;if(fall===null)fall=cy;if(clean(cy)){best=cy;fall=null;break}}if(fall!==null)best=fall}else best=H;slices.push([s,Math.min(best,H)-s]);s=Math.min(best,H)}'
+    +   '}else{for(var s2=0;s2<H;s2+=2000)slices.push([s2,Math.min(2000,H-s2)])}'
+    +   'var doc=null,maxPt=14000,pageTop=0;'
+    +   'for(var k=0;k<slices.length;k++){'
+    +     'say({progress:k,of:slices.length});'
+    +     'var sy=slices[k][0],sh=slices[k][1];'
+    +     'var c=await htmlToImage.toCanvas(de,{width:W,height:sh,pixelRatio:2,backgroundColor:bg,cacheBust:false,imagePlaceholder:"data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==",'
+    +       'style:{transform:"translateY(-"+sy+"px)",transformOrigin:"top left",width:W+"px",height:H+"px",overflow:"hidden",margin:"0"},filter:function(n){return !(n.id==="__hos_pdf"||(n.tagName==="SCRIPT"))}});'
+    +     'var img=c.toDataURL("image/jpeg",0.9);'
+    +     'if(mode==="a4"){var sc=pw/W;if(!doc)doc=new J({unit:"pt",format:"a4",compress:true});else doc.addPage("a4","portrait");doc.addImage(img,"JPEG",0,0,pw,sh*sc,undefined,"FAST")}'
+    +     'else{var wPt=W*PT,hLeft=H*PT;if(!doc){doc=new J({unit:"pt",format:[wPt,Math.min(hLeft,maxPt)],orientation:wPt>Math.min(hLeft,maxPt)?"l":"p",compress:true});pageTop=0}'
+    +       'var yPt=sy*PT-pageTop;if(yPt+sh*PT>maxPt+1){pageTop=sy*PT;yPt=0;var rest=H*PT-pageTop;doc.addPage([wPt,Math.min(rest,maxPt)],wPt>Math.min(rest,maxPt)?"l":"p")}'
+    +       'doc.addImage(img,"JPEG",0,yPt,wPt,sh*PT,undefined,"FAST")}'
+    +     'c.width=c.height=0;'
+    +   '}'
+    +   'say({progress:slices.length,of:slices.length});'
+    +   'var buf=doc.output("arraybuffer");parent.postMessage({hosPdf:1,pdf:buf,pages:doc.getNumberOfPages()},"*",[buf]);'
+    + '}'
+    + '})();<\/script>';
+  function pdfCopy(html) {
+    const src = prepared(html, false);
+    if (/<\/head>/i.test(src)) return src.replace(/<\/head>/i, KIT + '</head>');
+    if (/<\/body>/i.test(src)) return src.replace(/<\/body>/i, KIT + '</body>');
+    return src + KIT;
+  }
+  // returns a PDF Blob; onProgress(done, total)
+  function toPdf(html, { mode = 'long', width = 1280, onProgress } = {}) {
+    return new Promise((resolve, reject) => {
+      const f = document.createElement('iframe');
+      f.setAttribute('sandbox', 'allow-scripts');
+      f.setAttribute('aria-hidden', 'true'); f.tabIndex = -1;
+      // on screen but invisible and behind everything: browsers pause frames that are off screen
+      f.style.cssText = `position:fixed;left:0;top:0;width:${width}px;height:900px;border:0;zoom:1;opacity:0;z-index:-1;pointer-events:none`;
+      let timer = null;
+      const done = (err, val) => { clearTimeout(timer); removeEventListener('message', on); f.remove(); err ? reject(err) : resolve(val); };
+      const arm = ms => { clearTimeout(timer); timer = setTimeout(() => done(new Error('It took too long. Try again, or try A4 pages.')), ms); };
+      const on = e => {
+        if (e.source !== f.contentWindow || !e.data || e.data.hosPdf !== 1) return;
+        const m = e.data;
+        if (m.error) return done(new Error(m.error));
+        if (m.ready) { arm(240000); f.contentWindow.postMessage({ hosPdf: 'make', mode }, '*'); return; }
+        if (m.progress != null) { arm(240000); onProgress && onProgress(m.progress, m.of); return; }
+        if (m.pdf) done(null, new Blob([m.pdf], { type: 'application/pdf' }));
+      };
+      addEventListener('message', on);
+      arm(60000);
+      f.srcdoc = pdfCopy(html);
+      document.body.append(f);
+    });
+  }
+
+  window.CreateHTML = { bundle, unzip, textOf, titleIn, editable, frame, openTab, toPdf, SANDBOX };
 })();
