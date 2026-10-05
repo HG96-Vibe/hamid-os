@@ -66,12 +66,17 @@ module.exports = h => {
   const dayLabel = days => { const k = [...days].sort().join(); return k === '1,2,3,4,5,6,7' ? 'Every day' : k === '1,2,3,4,5' ? 'Weekdays' : k === '6,7' ? 'Weekends' : [...days].sort().map(n => DNAMES[n - 1][0].toUpperCase() + DNAMES[n - 1].slice(1)).join(', '); };
   function daysOf(v) {
     if (v == null || v === '') return [1, 2, 3, 4, 5, 6, 7];
-    const parts = (Array.isArray(v) ? v : String(v).split(/[,\s]+|\band\b/)).map(x => String(x).trim().toLowerCase()).filter(Boolean);
+    // turn multi-word phrases into single words first ("every day" → all), then split on commas, spaces and "and"
+    const norm = x => String(x).toLowerCase()
+      .replace(/\bevery\s*-?\s*day\b|\bdaily\b|\ball\s+(?:the\s+)?days?\b|\beach\s+day\b|\b7\s+days\b/g, ' all ')
+      .replace(/\bweek\s*-?\s*days?\b/g, ' weekdays ').replace(/\bweek\s*-?\s*ends?\b/g, ' weekends ');
+    const parts = (Array.isArray(v) ? v : [v]).flatMap(x => norm(x).split(/[,\s]+|\band\b|&/)).map(x => x.trim()).filter(Boolean);
     const out = new Set();
     for (const p of parts) {
-      if (/^(every ?day|daily|all|everyday)$/.test(p)) [1, 2, 3, 4, 5, 6, 7].forEach(n => out.add(n));
-      else if (/^week ?days?$/.test(p)) [1, 2, 3, 4, 5].forEach(n => out.add(n));
-      else if (/^week ?ends?$/.test(p)) [6, 7].forEach(n => out.add(n));
+      if (p === 'all') [1, 2, 3, 4, 5, 6, 7].forEach(n => out.add(n));
+      else if (p === 'weekdays') [1, 2, 3, 4, 5].forEach(n => out.add(n));
+      else if (p === 'weekends') [6, 7].forEach(n => out.add(n));
+      else if (p === 'on' || p === 'every') continue; // "on Mondays", "every Monday
       else if (/^[1-7]$/.test(p)) out.add(+p);
       else { const i = DNAMES.findIndex(n => p.startsWith(n)); if (i < 0) throw new UserError(`I don't know the day "${p}". Use day names (Mon…Sun), "every day", "weekdays" or "weekends".`); out.add(i + 1); }
     }
