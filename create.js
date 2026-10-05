@@ -635,7 +635,6 @@
       el('p', { class: 'meta cr-fmeta' }, `${doc.file.name} · ${fileSize(doc.file.size)} · uploaded ${when(doc.created_at)}`),
       body);
     if (kind.k === 'html') {
-      root.classList.add('cr-hview');
       htmlViewer(doc, body, root, back);
     } else if (kind.k === 'pdf') {
       body.append(el('p', { class: 'meta' }, 'Opening…'));
@@ -655,68 +654,116 @@
   }
 
   /* ---------- an HTML page: shown in a sealed frame, with versions ---------- */
+  // The page opens over the whole browser window (outside the app's column and display zoom), like opening the file
+  // itself; Full screen then hides the browser's bars too. Behind it, the usual details (project, folder, download).
   async function htmlViewer(doc, body, root, back) {
     const H = await html();
-    const st = { safe: false, full: false, ver: null }; // ver: an earlier version being looked at
-    let src = '';
+    const st = { safe: false, ver: null }; // ver: an earlier version being looked at
+    let src = '', layer = null;
     const fetchText = async path => { const { data, error } = await fileStore().download(path); if (error || !data) throw error || new Error('missing'); return data.text(); };
-    const stage = el('div', { class: 'cr-hstage' }, el('p', { class: 'meta' }, 'Opening…'));
-    const verSel = el('select', { class: 'cr-fsel cr-hver', 'aria-label': 'Version' });
-    const fill = () => {
-      const vs = doc.file.versions || [];
-      verSel.replaceChildren(el('option', { value: '' }, 'Latest' + (doc.file.at ? ` · ${when(doc.file.at)}` : '')), ...vs.map((v, i) => el('option', { value: String(i) }, `Earlier · ${when(v.at)}`)));
-      verSel.value = st.ver == null ? '' : String(st.ver);
-      verSel.hidden = !vs.length;
-      restore.hidden = st.ver == null;
-    };
-    const show = async () => {
-      stage.replaceChildren(el('p', { class: 'meta' }, 'Opening…'));
-      try { src = await fetchText(st.ver == null ? doc.file.path : doc.file.versions[st.ver].path); }
-      catch (e) { stage.replaceChildren(el('p', { class: 'meta' }, 'Couldn’t open the page. Check your connection, or use Download.')); return; }
-      stage.replaceChildren(H.frame(src, { safe: st.safe, title: doc.title || 'HTML page' }));
-    };
-    const safeBtn = el('button', { type: 'button', class: 'btn cr-small cr-hsafe', 'aria-pressed': 'false', title: 'Turn the page’s own code off (it shows as a still layout)',
-      onclick: () => { st.safe = !st.safe; safeBtn.setAttribute('aria-pressed', String(st.safe)); safeBtn.lastChild.textContent = st.safe ? 'Safe view on' : 'Safe view'; show(); } }, icon('shield', 15), el('span', {}, 'Safe view'));
-    const fullBtn = el('button', { type: 'button', class: 'btn cr-small', title: 'Fill the screen (Esc to come back)', onclick: () => setFull(!st.full) }, icon('expand', 15), el('span', {}, 'Full screen'));
-    const setFull = on => { st.full = on; root.classList.toggle('cr-hfull', on); document.documentElement.classList.toggle('cr-hfull-on', on); fullBtn.lastChild.textContent = on ? 'Exit full screen' : 'Full screen'; };
-    const onKey = e => { if (e.key === 'Escape' && st.full && !document.querySelector('dialog[open]')) setFull(false); };
-    document.addEventListener('keydown', onKey);
-    new MutationObserver((_, mo) => { if (!root.isConnected) { document.removeEventListener('keydown', onKey); document.documentElement.classList.remove('cr-hfull-on'); mo.disconnect(); } }).observe(document.body, { childList: true, subtree: true });
-    const tabBtn = el('button', { type: 'button', class: 'btn cr-small', title: 'Open it in a new tab', onclick: () => { if (src) H.openTab(src, doc.title || 'HTML page', st.safe); } }, icon('external', 15), el('span', {}, 'New tab'));
-    const restore = el('button', { type: 'button', class: 'btn cr-small', hidden: true, onclick: async () => {
-      if (st.ver == null) return;
-      const vs = doc.file.versions.slice(), old = vs[st.ver];
-      vs.splice(st.ver, 1, { path: doc.file.path, size: doc.file.size, at: doc.file.at || doc.updated_at, name: doc.file.name });
-      const plain = H.textOf(src);
-      try { await patchDoc(doc, { file: { ...doc.file, path: old.path, size: old.size, at: new Date().toISOString(), versions: vs }, plain: plain.slice(0, 200000), word_count: plain ? plain.split(/\s+/).length : 0 }); }
-      catch (e) { return; }
-      st.ver = null; fill(); toast('Restored. The version you replaced is kept as an earlier one.'); show();
-    } }, 'Restore this version');
-    verSel.addEventListener('change', () => { st.ver = verSel.value === '' ? null : +verSel.value; fill(); show(); });
-    const replace = el('button', { type: 'button', class: 'btn cr-small', title: 'Upload a newer copy (this one is kept as an earlier version)', onclick: () => {
-      const input = el('input', { type: 'file', accept: '.html,.htm,.zip,text/html,application/zip', style: 'display:none' });
-      input.addEventListener('change', async () => {
-        const f = input.files[0]; input.remove(); if (!f) return;
+    const vs = () => doc.file.versions || [];
+
+    // the details page behind it
+    body.replaceChildren(el('div', { class: 'cr-fcard cr-hcard' },
+      el('span', { class: 'cr-ftype big cr-ft-html' }, 'HTML page'),
+      el('p', {}, 'Opens over the whole window. Its own code runs there, sealed off from Hamid OS.'),
+      el('button', { class: 'btn primary', type: 'button', onclick: () => open() }, icon('expand', 16), ' Open page')));
+
+    function open() {
+      if (layer && layer.isConnected) return;
+      const stage = el('div', { class: 'cr-hstage' }, el('p', { class: 'meta' }, 'Opening…'));
+      const verSel = el('select', { class: 'cr-hsel', 'aria-label': 'Version' });
+      const restore = el('button', { type: 'button', class: 'cr-hb', hidden: true, onclick: async () => {
+        if (st.ver == null) return;
+        const list = vs().slice(), old = list[st.ver];
+        list.splice(st.ver, 1, { path: doc.file.path, size: doc.file.size, at: doc.file.at || doc.updated_at, name: doc.file.name });
+        const plain = H.textOf(src);
+        try { await patchDoc(doc, { file: { ...doc.file, path: old.path, size: old.size, at: new Date().toISOString(), versions: list }, plain: plain.slice(0, 200000), word_count: plain ? plain.split(/\s+/).length : 0 }); }
+        catch (e) { return; }
+        st.ver = null; fill(); toast('Restored. The version you replaced is kept as an earlier one.'); show();
+      } }, 'Restore this version');
+      const fill = () => {
+        verSel.replaceChildren(el('option', { value: '' }, 'Latest' + (doc.file.at ? ` \u00b7 ${when(doc.file.at)}` : '')), ...vs().map((v, i) => el('option', { value: String(i) }, `Earlier \u00b7 ${when(v.at)}`)));
+        verSel.value = st.ver == null ? '' : String(st.ver);
+        verSel.hidden = !vs().length; restore.hidden = st.ver == null;
+      };
+      const show = async () => {
+        stage.replaceChildren(el('p', { class: 'meta' }, 'Opening…'));
+        try { src = await fetchText(st.ver == null ? doc.file.path : vs()[st.ver].path); }
+        catch (e) { stage.replaceChildren(el('p', { class: 'meta' }, 'Couldn\u2019t open the page. Check your connection, or use Download.')); return; }
+        stage.replaceChildren(H.frame(src, { safe: st.safe, title: doc.title || 'HTML page' }));
+      };
+      verSel.addEventListener('change', () => { st.ver = verSel.value === '' ? null : +verSel.value; fill(); show(); });
+      const safeBtn = el('button', { type: 'button', class: 'cr-hb cr-hsafe', 'aria-pressed': String(st.safe), title: 'Turn the page\u2019s own code off (it shows as a still layout)',
+        onclick: () => { st.safe = !st.safe; safeBtn.setAttribute('aria-pressed', String(st.safe)); show(); } }, icon('shield', 15), el('span', {}, 'Safe view'));
+      const canFull = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+      const fullBtn = canFull ? el('button', { type: 'button', class: 'cr-hb', title: 'Full screen (Esc to come back)', onclick: () => {
+        if (document.fullscreenElement || document.webkitFullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+        else { const r = (layer.requestFullscreen || layer.webkitRequestFullscreen).call(layer); if (r && r.catch) r.catch(() => toast('Full screen isn\u2019t available here.')); }
+      } }, icon('expand', 15), el('span', {}, 'Full screen')) : null;
+      const onFs = () => { const on = !!(document.fullscreenElement || document.webkitFullscreenElement); layer.classList.toggle('fs', on); if (fullBtn) fullBtn.lastChild.textContent = on ? 'Exit full screen' : 'Full screen'; };
+      const tabBtn = el('button', { type: 'button', class: 'cr-hb', title: 'Open it in a new tab', onclick: () => { if (src) H.openTab(src, doc.title || 'HTML page', st.safe); } }, icon('external', 15), el('span', {}, 'New tab'));
+      const more = el('div', { class: 'cr-hmore', role: 'menu', hidden: true },
+        el('button', { type: 'button', role: 'menuitem', onclick: () => { more.hidden = true; replaceIt(); } }, icon('upload', 15), ' Upload a new version'),
+        el('button', { type: 'button', role: 'menuitem', onclick: () => { more.hidden = true; editableCopy(); } }, icon('edit', 15), ' Make an editable copy'),
+        el('button', { type: 'button', role: 'menuitem', onclick: () => { more.hidden = true; download(); } }, icon('download', 15), ' Download'),
+        el('button', { type: 'button', role: 'menuitem', onclick: () => { more.hidden = true; close(); } }, icon('edit', 15), ' Details: project, folder, Trash'));
+      const moreBtn = el('button', { type: 'button', class: 'cr-hb', 'aria-haspopup': 'menu', 'aria-label': 'More', title: 'More', onclick: e => { e.stopPropagation(); more.hidden = !more.hidden; if (!more.hidden) more.querySelector('button').focus(); } }, '\u22ef');
+      const close = () => {
+        if (document.fullscreenElement || document.webkitFullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+        layer.remove(); document.documentElement.classList.remove('cr-hlayer-on');
+        document.removeEventListener('keydown', onKey, true); document.removeEventListener('fullscreenchange', onFs); document.removeEventListener('webkitfullscreenchange', onFs);
+      };
+      const onKey = e => {
+        if (e.key !== 'Escape' || document.querySelector('dialog[open]')) return;
+        if (!more.hidden) { more.hidden = true; moreBtn.focus(); return; }
+        if (document.fullscreenElement || document.webkitFullscreenElement) return; // the browser leaves full screen itself
+        e.preventDefault(); close();
+      };
+      layer = el('div', { class: 'cr-hlayer', role: 'dialog', 'aria-modal': 'true', 'aria-label': doc.title || 'HTML page', onclick: e => { if (!e.target.closest('.cr-hmore,[aria-haspopup]')) more.hidden = true; } },
+        el('div', { class: 'cr-hbar' },
+          el('button', { type: 'button', class: 'cr-hb cr-hback', title: 'Back to Documents', 'aria-label': 'Back to Documents', onclick: () => { close(); back(); } }, icon('back', 16), el('span', { class: 'cr-hbl' }, 'Documents')),
+          el('span', { class: 'cr-ftype cr-ft-html' }, 'HTML'),
+          el('b', { class: 'cr-htitle', title: doc.title || '' }, doc.title || 'HTML page'),
+          el('div', { class: 'cr-hacts' }, verSel, restore, safeBtn, fullBtn, tabBtn, el('div', { class: 'cr-hmorewrap' }, moreBtn, more)),
+          el('button', { type: 'button', class: 'cr-hb cr-hx', 'aria-label': 'Close the page', title: 'Close (Esc)', onclick: close }, '\u00d7')),
+        stage);
+      async function replaceIt() {
+        const input = el('input', { type: 'file', accept: '.html,.htm,.zip,text/html,application/zip', style: 'display:none' });
+        input.addEventListener('change', async () => {
+          const f = input.files[0]; input.remove(); if (!f) return;
+          try {
+            toast('Uploading the new version\u2026');
+            const text = /\.zip$/i.test(f.name) ? (await H.bundle(await H.unzip(f, loadScript))).html : await f.text();
+            await newVersion(doc, text, f.name);
+            st.ver = null; fill(); toast('Updated. The previous version is kept under Version.'); show();
+          } catch (e) { toast(`Couldn\u2019t update it. ${e && e.message ? e.message : 'Try again.'}`); }
+        });
+        document.body.append(input); input.click();
+      }
+      async function editableCopy() {
+        if (!src) return;
         try {
-          toast('Uploading the new version…');
-          const text = /\.zip$/i.test(f.name) ? (await H.bundle(await H.unzip(f, loadScript))).html : await f.text();
-          await newVersion(doc, text, f.name);
-          st.ver = null; fill(); toast('Updated. The previous version is kept under Version.'); show();
-        } catch (e) { toast(`Couldn’t update it. ${e && e.message ? e.message : 'Try again.'}`); }
-      });
-      document.body.append(input); input.click();
-    } }, icon('upload', 15), el('span', {}, 'New version'));
-    const editBtn = el('button', { type: 'button', class: 'btn cr-small', title: 'Copy the page’s text into a document you can edit', onclick: async () => {
-      if (!src) return;
-      try {
-        const d = await q(sb.from('documents').insert({ user_id: DS.uid(), title: ((doc.title || 'Page') + ' (editable)').slice(0, 200), folder_id: doc.folder_id, project_id: doc.project_id,
-          html: H.editable(src), page: { size: 'A4', margins: 'normal', orient: 'portrait' } }).select(LIST_COLS).single());
-        C.docs.unshift(d); toast('Made an editable copy. The page itself is unchanged.'); openDoc(d.id);
-      } catch (e) {}
-    } }, icon('edit', 15), el('span', {}, 'Editable copy'));
-    body.replaceChildren(el('div', { class: 'cr-htools' }, safeBtn, fullBtn, tabBtn, replace, editBtn, verSel, restore,
-      el('button', { type: 'button', class: 'btn cr-small cr-hexit', onclick: () => setFull(false) }, '× Close full screen')), stage);
-    fill(); show();
+          const d = await q(sb.from('documents').insert({ user_id: DS.uid(), title: ((doc.title || 'Page') + ' (editable)').slice(0, 200), folder_id: doc.folder_id, project_id: doc.project_id,
+            html: H.editable(src), page: { size: 'A4', margins: 'normal', orient: 'portrait' } }).select(LIST_COLS).single());
+          C.docs.unshift(d); close(); toast('Made an editable copy. The page itself is unchanged.'); openDoc(d.id);
+        } catch (e) {}
+      }
+      async function download() {
+        const { data, error } = await fileStore().createSignedUrl(st.ver == null ? doc.file.path : vs()[st.ver].path, 300, { download: doc.file.name });
+        if (error || !data) { toast('Couldn\u2019t download it just now. Try again.'); return; }
+        const a = el('a', { href: data.signedUrl, download: doc.file.name, rel: 'noopener' }); document.body.append(a); a.click(); a.remove();
+      }
+      document.addEventListener('keydown', onKey, true);
+      document.addEventListener('fullscreenchange', onFs); document.addEventListener('webkitfullscreenchange', onFs);
+      document.body.append(layer); document.documentElement.classList.add('cr-hlayer-on');
+      // leaving the document some other way takes the page with it
+      let shown = root.isConnected; // the details page may still be on its way in
+      new MutationObserver((_, mo) => { if (root.isConnected) { shown = true; return; } if (!shown) return; if (layer.isConnected) close(); mo.disconnect(); }).observe(document.body, { childList: true, subtree: true });
+      fill(); show();
+      (fullBtn || tabBtn).focus({ preventScroll: true });
+    }
+    open();
   }
   async function newVersion(doc, text, name) {
     const H = await html();
