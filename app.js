@@ -839,6 +839,31 @@ function openCapture() {
   dlg.append(form); dlg.addEventListener('close', () => dlg.remove());
   document.body.append(dlg); dlg.showModal(); ta.focus();
 }
+// edit a thought in place: the text becomes a box; Save (or Ctrl/⌘ + Enter) keeps it, Cancel (or Esc) puts it back
+function editThought(it, li) {
+  if (!li || li.querySelector('textarea')) return;
+  const p = li.querySelector('p'), acts = li.querySelector('.actions');
+  const ta = el('textarea', { class: 'field', rows: String(Math.min(10, Math.max(2, it.body.split('\n').length + 1))), maxlength: '5000', 'aria-label': 'Edit thought' });
+  ta.value = it.body;
+  const done = () => { form.replaceWith(p); acts.style.display = ''; };
+  const save = async () => {
+    const v = ta.value.trim();
+    if (!v) { ta.focus(); return; }
+    if (v === it.body) return done();
+    saveBtn.disabled = true;
+    try { await q(sb.from('inbox').update({ body: v }).eq('id', it.id)); } catch (e) { saveBtn.disabled = false; return; }
+    it.body = v; p.textContent = v; done(); toast('Thought updated.');
+  };
+  const saveBtn = el('button', { class: 'btn primary', type: 'submit' }, 'Save');
+  const form = el('form', { class: 'inbox-edit', style: 'display:grid;gap:8px', onsubmit: e => { e.preventDefault(); save(); } }, ta,
+    el('div', { class: 'actions' }, saveBtn, el('button', { class: 'btn', type: 'button', onclick: done }, 'Cancel')));
+  ta.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save(); }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(); }
+  });
+  p.replaceWith(form); acts.style.display = 'none';
+  ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+}
 async function viewInbox() {
   const [items, cleared] = await Promise.all([
     q(sb.from('inbox').select('*').is('done_at', null).order('created_at', { ascending: false })),
@@ -857,6 +882,7 @@ async function viewInbox() {
     el('ul', { class: 'inbox' }, items.map(it => el('li', {},
       el('p', {}, it.body), el('time', { datetime: it.created_at }, timeAgo(it.created_at)),
       el('div', { class: 'actions' },
+        el('button', { class: 'btn', onclick: e => editThought(it, e.target.closest('li')) }, 'Edit'),
         el('button', { class: 'btn', onclick: () => toTask(it, 'day') }, 'To today'),
         el('button', { class: 'btn', onclick: () => toTask(it, 'week') }, 'To this week'),
         el('button', { class: 'btn', onclick: async () => { await clear(it); refresh(); } }, 'Clear'),

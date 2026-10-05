@@ -144,7 +144,10 @@ A remote MCP server so the Claude app can read and update Hamid OS. Add it in Cl
 Add custom connector with `https://daily-sheet-six.vercel.app/mcp`, then sign in (password + 2FA) on the page it opens.
 
 - Tools: overview, money report, payments, categories / budgets, direct debits (add, change, tick paid, delete),
-  loans and lending, net worth, tasks, projects, documents. Deletes are marked destructive.
+  loans and lending, net worth, tasks (notes, progress, scheduling on a day), projects (add, update), Insights
+  (analysis, wins, daily check-in), Inbox thoughts (add, edit, sort, delete), documents (search, read, create, edit
+  with the old version kept in history) and Listen (add YouTube links). Deletes are marked destructive.
+  The extra tools live in api/_more.js.
 - Every call runs as you with a 2FA Supabase session, so the same owner-only RLS applies.
 - `MCP_SECRET` (Vercel env, production only, never in the repo) seals sign-in codes and refresh tokens.
 - Disconnect: remove the connector in Claude, or Home → "Sign out everywhere else".

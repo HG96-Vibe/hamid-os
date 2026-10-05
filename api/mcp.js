@@ -8,10 +8,11 @@ const Report = require('../money-report.js');
 const Core = require('../money-core.js');
 
 const PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];
-const INSTRUCTIONS = `Hamid OS is Hamid's personal operating system: daily / weekly / monthly tasks, projects, documents, and Capital (money).
+const INSTRUCTIONS = `Hamid OS is Hamid's personal operating system: daily / weekly / monthly tasks, projects, documents, Capital (money), an Inbox of captured thoughts, Insights (how he works: completion, focus, energy, wins) and Listen (focus music).
 Capital has three books: Personal and the companies (Augustova, PCTR). Amounts are in pounds (GBP). Money out is spending; money in is income.
 Direct debits, loans and lending are a separate record and are not counted in money in / out until a direct debit is ticked as paid.
 "To play with" = this month's money in − money out − direct debits still expected this month (Personal only).
+When asked to analyse how he's doing, use get_insights. A thought to sort later goes in the Inbox (add_to_inbox).
 When adding something, default to the Personal book unless a company is named. Use the list tools first to find ids before updating or deleting.`;
 
 /* ---------- context for one request ---------- */
@@ -356,7 +357,7 @@ const TOOLS = [
       const [horizon, period] = w === 'week' ? ['week', L.weekStart(t0)] : w === 'month' ? ['month', L.monthStart(t0)] : ['day', w === 'today' ? t0 : need(isoDate(a.when, 'when'), 'when')];
       let project_id = null, pname;
       if (a.project) {
-        const ps = await c.db.get('projects?select=id,name&status=eq.active'), n = String(a.project).trim().toLowerCase();
+        const ps = (await c.db.get('projects?select=id,name,status')).sort((x, y) => (x.status === 'active' ? 0 : 1) - (y.status === 'active' ? 0 : 1)), n = String(a.project).trim().toLowerCase();
         const p = ps.find(x => x.name.toLowerCase() === n) || ps.find(x => x.name.toLowerCase().includes(n));
         if (!p) throw new UserError(`No project called "${a.project}". Use list_projects to see them.`);
         project_id = p.id; pname = p.name;
@@ -385,6 +386,7 @@ const TOOLS = [
       return { deleted: rows[0].title };
     } }
 ];
+TOOLS.push(...require('./_more')({ L, UserError, need, isoDate, uuid, text, S, str, num, DATE }));
 const BY = Object.fromEntries(TOOLS.map(t => [t.name, t]));
 const listed = TOOLS.map(t => ({ name: t.name, title: t.title, description: t.description, inputSchema: t.inputSchema,
   annotations: { title: t.title, readOnlyHint: !!t.ro, destructiveHint: !!t.destructive, idempotentHint: !!t.ro, openWorldHint: false } }));
