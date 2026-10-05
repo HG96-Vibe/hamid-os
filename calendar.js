@@ -85,14 +85,15 @@
         onclick: () => { C.day = d; document.querySelectorAll('.cal-cell.sel').forEach(x => x.classList.remove('sel')); cells.find(c => c.dataset.d === d).classList.add('sel'); drawDay(); if (matchMedia('(max-width:800px)').matches) dayBox.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
         'data-d': d },
         el('span', { class: 'cal-n' }, String(+d.slice(8))),
-        el('span', { class: 'cal-evs' }, items.slice(0, 3).map(e => el('span', { class: `cal-ev k-${e.kind}${e.done ? ' done' : ''}` }, e.title)),
-          items.length > 3 ? el('span', { class: 'cal-more' }, `+${items.length - 3} more`) : null),
+        el('span', { class: 'cal-evs', 'data-n': String(items.length) }, items.slice(0, 14).map(e => el('span', { class: `cal-ev k-${e.kind}${e.done ? ' done' : ''}` }, e.title)),
+          el('span', { class: 'cal-more', hidden: items.length <= 14 }, `+${items.length - 14} more`)),
         el('span', { class: 'cal-dots', 'aria-hidden': 'true' }, items.slice(0, 5).map(e => el('i', { class: `k-${e.kind}` })))));
     }
     drawDay();
     const filters = el('div', { class: 'cal-filters', role: 'group', 'aria-label': 'Show' }, KINDS.map(([k, l]) => el('button', { type: 'button', class: `cal-f k-${k}`, 'aria-pressed': String(!C.hide.has(k)),
       onclick: () => { C.hide.has(k) ? C.hide.delete(k) : C.hide.add(k); keep('cal_hide', [...C.hide].join(',')); refresh(); } }, el('i', { 'aria-hidden': 'true' }), l)));
-    return el('div', { class: 'cal' },
+    const grid = el('div', { class: 'cal-grid', style: `--weeks:${cells.length / 7}` }, ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(w => el('div', { class: 'cal-wd' }, w)), cells);
+    const root = el('div', { class: 'cal' },
       el('div', { class: 'head cal-head' }, el('h1', {}, fmt(ms, { month: 'long', year: 'numeric' })),
         el('button', { class: 'arrow', 'aria-label': 'Previous month', onclick: () => { C.month = addMonths(ms, -1); refresh(); } }, '‹'),
         el('button', { class: 'arrow', 'aria-label': 'Next month', onclick: () => { C.month = addMonths(ms, 1); refresh(); } }, '›'),
@@ -100,9 +101,46 @@
         el('button', { class: 'btn cal-sub', onclick: feedDialog }, '📅 Add to my phone’s calendar')),
       filters,
       el('div', { class: 'cal-wrap' },
-        el('div', { class: 'cal-grid' }, ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(w => el('div', { class: 'cal-wd' }, w)), cells),
-        dayBox));
+        grid, dayBox));
+    // measure once it's on the page, and again after the page has settled (it slides in)
+    const wait = () => { if (root.isConnected) { fit(root); setTimeout(() => root.isConnected && fit(root), 450); } else if (document.body.contains(document.getElementById('main'))) requestAnimationFrame(wait); };
+    requestAnimationFrame(wait);
+    return root;
   }
+
+  // On a wide screen the month fills the window below the filters, and each day shows as many entries as fit
+  // ("+N more" for the rest). The day panel is the same height.
+  function fit(root) {
+    const grid = root.querySelector('.cal-grid'), day = root.querySelector('.cal-day');
+    if (!grid) return;
+    const wide = matchMedia('(min-width:1101px)').matches;
+    grid.classList.toggle('fill', wide); day && day.classList.toggle('fill', wide);
+    if (wide) {
+      // the display size setting zooms the page, so convert screen pixels to the grid's own
+      const r = grid.getBoundingClientRect(), z = (grid.offsetHeight && r.height / grid.offsetHeight) || 1;
+      const h = Math.max(620, (window.innerHeight - r.top - 24) / z);
+      root.style.setProperty('--cal-h', h + 'px');
+    } else root.style.removeProperty('--cal-h');
+    if (!matchMedia('(min-width:801px)').matches) return; // phones show dots
+    for (const evs of grid.querySelectorAll('.cal-evs')) {
+      const all = [...evs.querySelectorAll('.cal-ev')], more = evs.querySelector('.cal-more'), n = +evs.dataset.n;
+      all.forEach(x => { x.hidden = false; });
+      more.hidden = true;
+      if (!wide) { // the older fixed-size cells: three, then "+N more"
+        all.forEach((x, i) => { x.hidden = i >= 3; });
+        if (n > 3) { more.hidden = false; more.textContent = `+${n - 3} more`; }
+        continue;
+      }
+      let shownN = all.length;
+      if (n > shownN) { more.hidden = false; more.textContent = `+${n - shownN} more`; }
+      while (shownN > 0 && evs.scrollHeight > evs.clientHeight + 1) {
+        all[--shownN].hidden = true;
+        more.hidden = false; more.textContent = `+${n - shownN} more`;
+      }
+    }
+  }
+  let resizeT = 0;
+  window.addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(() => { const r = document.querySelector('#main .cal'); if (r) fit(r); }, 120); });
 
   /* ---------- the private calendar link ---------- */
   async function feedDialog() {
