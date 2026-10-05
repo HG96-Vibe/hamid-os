@@ -14,7 +14,7 @@
   const store = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
 
   const M = { books: [], book: store('mn_book'), view: store('mn_view') === 'worth' ? 'worth' : 'book', month: monthStart(today()),
-    hide: store('mn_hide') === '1', cats: [], rules: [], tx: [], filter: null, search: '', holdings: [], values: [] };
+    hide: store('mn_hide') === '1', cats: [], rules: [], tx: [], filter: null, search: '', find: '', found: null, holdings: [], values: [] };
   let page = null;
 
   const ICONS = {
@@ -24,7 +24,8 @@
     sliders: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
     trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
-    report: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/>'
+    report: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/>',
+    search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>'
   };
   const icon = (n, s = 16) => Object.assign(el('span', { class: 'mn-ic', 'aria-hidden': 'true' }),
     { innerHTML: `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[n]}</svg>` });
@@ -162,7 +163,7 @@
     foldCards(cards);
     const wide = isWide();
     cards.forEach(c => { const on = keyOf(c) === sel; c.classList.toggle('sel', wide && on); if (wide) c.classList.remove('folded'); });
-    if (side) side.replaceChildren(...cards.map(c => {
+    if (side) side.replaceChildren(...(M.view === 'book' ? [findBox()] : []), ...cards.map(c => {
       const id = keyOf(c), title = (c.querySelector(':scope > .mn-ch h3') || {}).textContent || '';
       return el('button', { type: 'button', class: 'mn-sbtn', 'data-k': id, 'aria-current': String(id === sel), onclick: () => selectCard(id) },
         el('b', {}, title), c.dataset.sum ? el('small', { class: 'mn-amt' }, c.dataset.sum) : null);
@@ -207,6 +208,88 @@
     }
   }
 
+  /* ---------- find a payment: a small search box at the top of the card list ----------
+     Looks through every payment in this book (any month, not just the one showing): words in the description,
+     category or note, or an amount ("12.50"). Direct debits match by name too. Picking a payment takes you to
+     its month, opens Payments and highlights it. */
+  let findSeq = 0, findTimer = null;
+  function findBox() {
+    const input = el('input', { type: 'search', class: 'mn-findin', id: 'mn-find', placeholder: 'Find a payment', 'aria-label': 'Find a payment in any month',
+      autocomplete: 'off', maxlength: '80', value: M.find, 'aria-controls': 'mn-found',
+      oninput: e => { M.find = e.target.value; clearTimeout(findTimer); findTimer = setTimeout(runFind, 220); },
+      onkeydown: e => {
+        if (e.key === 'Escape' && M.find) { e.preventDefault(); e.stopPropagation(); M.find = ''; M.found = null; e.target.value = ''; paintFound(); }
+        if (e.key === 'ArrowDown') { const f = document.querySelector('#mn-found button'); if (f) { e.preventDefault(); f.focus(); } }
+        if (e.key === 'Enter') { const f = document.querySelector('#mn-found button'); if (f) { e.preventDefault(); f.click(); } }
+      } });
+    const box = el('div', { class: 'mn-find', role: 'search' }, el('label', { class: 'mn-findf' }, icon('search', 15), input), el('div', { class: 'mn-found', id: 'mn-found', 'aria-live': 'polite' }));
+    paintFound(box.querySelector('.mn-found'));
+    return box;
+  }
+  const amountOf = s => { const m = /^[+-]?£?\s?(\d{1,3}(?:,\d{3})*|\d+)(?:\.(\d{1,2}))?$/.exec(s.trim()); return m ? Math.round(parseFloat(m[1].replace(/,/g, '') + '.' + (m[2] || '0')) * 100) : null; };
+  async function runFind() {
+    const s = M.find.trim(), my = ++findSeq, book = M.book;
+    if (s.length < 2 && amountOf(s) == null) { M.found = null; paintFound(); return; }
+    const pence = amountOf(s), low = s.toLowerCase();
+    const hit = t => t.description.toLowerCase().includes(low) || (t.category || '').toLowerCase().includes(low) || (t.note || '').toLowerCase().includes(low) || (pence != null && Math.abs(t.amount_pence) === pence);
+    // what's already loaded answers straight away; the database then adds older months
+    const local = M.tx.filter(hit);
+    const dds = isPersonal(book) ? (M.planned || []).filter(p => p.name.toLowerCase().includes(low) || (pence != null && p.amount_pence === pence)) : [];
+    M.found = { tx: local.slice(0, 50), dds, more: true }; paintFound();
+    let rows = [];
+    try {
+      const w = '%' + s.replace(/[%_,()*\\]/g, ' ').trim() + '%', ors = [`description.ilike.${w}`, `category.ilike.${w}`, `note.ilike.${w}`];
+      if (pence != null) ors.push(`amount_pence.eq.${pence}`, `amount_pence.eq.${-pence}`);
+      rows = await q(sb.from('money_tx').select('*').eq('book_id', book).or(ors.join(',')).order('occurred_on', { ascending: false }).limit(60));
+    } catch (e) { rows = []; }
+    if (my !== findSeq || book !== M.book) return;
+    const seen = new Set(local.map(t => t.id));
+    const all = local.concat(rows.filter(r => !seen.has(r.id))).sort((a, b) => (a.occurred_on < b.occurred_on ? 1 : a.occurred_on > b.occurred_on ? -1 : 0));
+    M.found = { tx: all.slice(0, 50), dds, more: false, capped: all.length > 50 }; paintFound();
+  }
+  function paintFound(box) {
+    box = box || document.getElementById('mn-found'); if (!box) return;
+    const f = M.found;
+    if (!f) { box.replaceChildren(); box.hidden = true; return; }
+    box.hidden = false;
+    const none = !f.tx.length && !f.dds.length;
+    box.replaceChildren(...[
+      el('p', { class: 'mn-foundh' }, f.more && none ? 'Searching…' : none ? 'No payments match.' : `${plural(f.tx.length, 'payment')}${f.capped ? ' (latest 50)' : ''}${f.dds.length ? ` · ${plural(f.dds.length, 'direct debit')}` : ''}`),
+      f.tx.length ? el('div', { class: 'mn-foundl' }, f.tx.map(t => el('button', { type: 'button', class: 'mn-fr', title: 'Show it in Payments', onclick: () => showPayment(t), onkeydown: findNav },
+        el('span', { class: 'mn-frd' }, fmt(t.occurred_on, { day: 'numeric', month: 'short', year: t.occurred_on.slice(0, 4) === today().slice(0, 4) ? undefined : '2-digit' })),
+        el('span', { class: 'mn-frn' }, t.description, t.category ? el('small', {}, t.category) : null),
+        amt(t.amount_pence, { plus: true }, 'mn-fra ' + (t.amount_pence > 0 ? 'in' : 'out'))))) : null,
+      f.dds.length ? el('div', { class: 'mn-foundl' }, f.dds.map(p => el('button', { type: 'button', class: 'mn-fr', title: 'Show it in Direct debits', onclick: () => openCard('planned'), onkeydown: findNav },
+        el('span', { class: 'mn-frd' }, 'DD'), el('span', { class: 'mn-frn' }, p.name, el('small', {}, CADENCE[p.cadence] || '')), amt(p.amount_pence, {}, 'mn-fra out')))) : null].filter(Boolean));
+  }
+  function findNav(e) {
+    const all = [...document.querySelectorAll('#mn-found button')], i = all.indexOf(e.target);
+    if (e.key === 'ArrowDown' && all[i + 1]) { e.preventDefault(); all[i + 1].focus(); }
+    if (e.key === 'ArrowUp') { e.preventDefault(); (all[i - 1] || document.getElementById('mn-find')).focus(); }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); document.getElementById('mn-find').focus(); }
+  }
+  function openCard(id) {
+    store('mn_sel_book', id); opened.add(id);
+    try { sessionStorage.setItem('mn_open', JSON.stringify([...opened])); } catch (e) {}
+    draw();
+    const card = page && page.querySelector('.mn-main > .mn-card.sel') || page && [...page.querySelectorAll('.mn-main > .mn-card')].find(c => keyOf(c) === id);
+    if (card) { const r = card.getBoundingClientRect(); if (r.top < 90 || r.top > window.innerHeight * .6) window.scrollBy({ top: r.top - 110, behavior: calm() ? 'auto' : 'smooth' }); }
+  }
+  async function showPayment(t) {
+    const ms = monthStart(t.occurred_on);
+    M.filter = null; M.search = '';
+    if (ms !== M.month) { M.month = ms; await loadBook(); }
+    openCard('payments');
+    const row = page && page.querySelector(`.mn-tx[data-id="${CSS.escape(t.id)}"]`);
+    if (!row) return;
+    const list = row.closest('.mn-cap');
+    if (list && list.classList.contains('capped')) list.scrollTop += row.getBoundingClientRect().top - list.getBoundingClientRect().top - list.clientHeight / 3;
+    const r = row.getBoundingClientRect();
+    if (r.top < 100 || r.bottom > window.innerHeight - 20) window.scrollBy({ top: r.top - window.innerHeight / 3, behavior: calm() ? 'auto' : 'smooth' });
+    row.classList.remove('mn-hit'); void row.offsetWidth; row.classList.add('mn-hit');
+    setTimeout(() => row.classList.remove('mn-hit'), 2600);
+  }
+
   // Long lists show 10 at a time and scroll for the rest, so no card grows without end.
   const CAP = 10;
   function capLists(scrolled) {
@@ -227,7 +310,7 @@
   }
   document.addEventListener('toggle', e => { if (page && page.contains(e.target)) capLists(); }, true);
   async function switchBook(id) {
-    M.view = 'book'; M.book = id; M.filter = null; M.search = ''; store('mn_book', id); store('mn_view', 'book');
+    M.view = 'book'; M.book = id; M.filter = null; M.search = ''; M.find = ''; M.found = null; store('mn_book', id); store('mn_view', 'book');
     await loadBook(); draw();
   }
   async function switchWorth() { M.view = 'worth'; store('mn_view', 'worth'); await loadWorth(); draw(); }
@@ -454,7 +537,7 @@
   function txRow(t) {
     const sel = catSelect(t.category, { kind: t.amount_pence > 0 ? 'in' : 'out', label: `Category for ${t.description}` });
     sel.addEventListener('change', () => setCat(t, sel.value || null));
-    return el('div', { class: 'mn-tx' + (t.category ? '' : ' uncat') },
+    return el('div', { class: 'mn-tx' + (t.category ? '' : ' uncat'), 'data-id': t.id },
       el('button', { type: 'button', class: 'mn-txd', title: 'Edit', onclick: () => editDialog(t) }, t.description,
         t.note ? el('small', {}, t.note) : null, t.source === 'import' ? el('span', { class: 'mn-src' }, 'imported') : null),
       sel,
