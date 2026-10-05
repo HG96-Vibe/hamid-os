@@ -367,7 +367,7 @@ module.exports = h => {
       async run(a, c) {
         const d = (await c.db.get(`documents?select=id,title,html,content,word_count,file&id=eq.${uuid(a.id, 'id')}&deleted_at=is.null`))[0];
         if (!d) throw new UserError('No document with that id.');
-        if ((a.text != null || a.append != null) && d.file && !d.html) throw new UserError("That's an uploaded file (PDF/PowerPoint); its text can't be edited here.");
+        if ((a.text != null || a.append != null) && d.file && !d.html) throw new UserError(d.file.ext === 'html' ? 'That\'s an HTML page. Use read_html_page to get its code and save_html_page with its id to save a new version.' : "That's an uploaded file (PDF/PowerPoint); its text can't be edited here.");
         if (a.text != null && a.append != null) throw new UserError('Use text or append, not both.');
         const patch = {};
         if (a.title != null) patch.title = need(text(a.title, 200), 'title');
@@ -380,6 +380,55 @@ module.exports = h => {
         patch.updated_at = new Date().toISOString();
         const [u] = await c.db.update(`documents?id=eq.${d.id}`, patch);
         return { updated: { id: u.id, title: u.title, words: u.word_count }, previous_version_saved: !!patch.html };
+      } },
+
+    /* ===================== HTML pages ===================== */
+    { name: 'save_html_page', title: 'Save an HTML page',
+      description: "Save a web page (a complete HTML document: dashboards, reports, one-pagers, mock-ups) into Create, optionally filed under a project, so Hamid can open it inside Hamid OS. It runs in a sealed frame there: scripts, charts and CDN libraries work, but it can't reach his data, and localStorage only lasts while it's open. Keep it to one self-contained file (put CSS and JS inline; images as data: links or https URLs). To update an existing page, pass its id: the old copy is kept as an earlier version.",
+      inputSchema: S({ html: str('The full HTML document'), title: str('Title (defaults to the page\'s <title>)'), project: str('Project or company to file it under (optional)'), id: str('An existing HTML page\'s id, to save a new version of it') }, ['html']),
+      async run(a, c) {
+        const src = String(need(a.html, 'html'));
+        if (!/<[a-z!]/i.test(src)) throw new UserError('That doesn\'t look like HTML.');
+        const size = Buffer.byteLength(src, 'utf8');
+        if (size > 50 * 1024 * 1024) throw new UserError('The page is over 50 MB.');
+        const plain = L.htmlText(src).slice(0, 200000), words = plain ? plain.split(/\s+/).length : 0;
+        const path = `${c.uid}/${require('crypto').randomUUID()}.html`;
+        let project_id; if (a.project) project_id = (await findProject(c, a.project)).id;
+        if (a.id) {
+          const d = (await c.db.get(`documents?select=id,title,file,project_id&id=eq.${uuid(a.id, 'id')}&deleted_at=is.null`))[0];
+          if (!d) throw new UserError('No document with that id.');
+          if (!d.file || d.file.ext !== 'html') throw new UserError('That document isn\'t an HTML page. Leave out id to save a new one.');
+          await c.files.put(path, src, 'text/html');
+          const versions = [{ path: d.file.path, size: d.file.size, at: d.file.at || new Date().toISOString(), name: d.file.name }, ...(d.file.versions || [])];
+          const drop = versions.splice(10);
+          const patch = { file: { ...d.file, path, size, at: new Date().toISOString(), versions }, plain, word_count: words, updated_at: new Date().toISOString() };
+          if (a.title) patch.title = text(a.title, 200);
+          if (project_id !== undefined) patch.project_id = project_id;
+          await c.db.update(`documents?id=eq.${d.id}`, patch);
+          if (drop.length) await c.files.remove(drop.map(v => v.path)).catch(() => {});
+          return { updated: { id: d.id, title: patch.title || d.title, earlier_versions: versions.length }, where: 'Create (and the project page, if filed under one). The previous copy is under Version.' };
+        }
+        await c.files.put(path, src, 'text/html');
+        const title = text(a.title, 200) || L.htmlTitle(src) || 'Untitled page';
+        try {
+          const [d] = await c.db.insert('documents', { user_id: c.uid, title, html: null, plain, word_count: words, project_id: project_id || null,
+            file: { path, name: title.replace(/[^\w .-]+/g, '').trim().slice(0, 190) + '.html', size, type: 'text/html', ext: 'html', at: new Date().toISOString(), versions: [] } });
+          return { saved: { id: d.id, title: d.title, project: a.project || undefined }, where: 'Create' + (project_id ? ' and the project page' : '') + '. Open it there to view.' };
+        } catch (e) { await c.files.remove([path]).catch(() => {}); throw e; }
+      } },
+    { name: 'read_html_page', title: 'Read an HTML page\'s code', ro: true,
+      description: 'The HTML source of a page saved in Create (use search_documents to find it), e.g. to change it and save a new version with save_html_page.',
+      inputSchema: S({ id: str('Document id'), version: num('0 for the latest (default); 1 for the one before, and so on') }, ['id']),
+      async run(a, c) {
+        const d = (await c.db.get(`documents?select=id,title,file,project_id&id=eq.${uuid(a.id, 'id')}&deleted_at=is.null`))[0];
+        if (!d) throw new UserError('No document with that id.');
+        if (!d.file || d.file.ext !== 'html') throw new UserError('That document isn\'t an HTML page; use read_document for its text.');
+        const v = Math.max(0, a.version | 0), vs = d.file.versions || [];
+        if (v > vs.length) throw new UserError(`It has ${vs.length} earlier version${vs.length === 1 ? '' : 's'}.`);
+        const src = await c.files.text(v ? vs[v - 1].path : d.file.path);
+        const MAX = 400000;
+        return { id: d.id, title: d.title, version: v ? `earlier #${v}` : 'latest', earlier_versions: vs.length, size_bytes: Buffer.byteLength(src, 'utf8'),
+          html: src.length > MAX ? src.slice(0, MAX) : src, truncated: src.length > MAX || undefined };
       } },
 
     /* ===================== Listen ===================== */

@@ -54,6 +54,10 @@
     image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="m4 18 5-5 4 4 3-3 4 4"/>',
     history: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7.5V12l3 2"/>',
     upload: '<path d="M12 16V4M6 10l6-6 6 6M4 20h16"/>',
+    shield: '<path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/>',
+    expand: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+    external: '<path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6"/>',
+    edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/>',
     back: '<path d="m15 18-6-6 6-6"/>'
   };
   function icon(name, size = 18) {
@@ -380,7 +384,7 @@
     listBox.replaceChildren(items.length ? el('div', { class: 'cr-cards' }, items.map(card))
       : el('div', { class: 'cr-empty' }, el('p', {}, empty),
         C.sel !== 'trash' && !C.search ? el('div', { class: 'cr-empty-acts' }, el('button', { class: 'btn primary', type: 'button', onclick: () => templateDialog(curFolder()) }, '+ New document'),
-          el('button', { class: 'btn', type: 'button', onclick: pickUpload }, icon('upload', 16), ' Upload document')) : null));
+          el('button', { class: 'btn', type: 'button', onclick: e => pickUpload(e) }, icon('upload', 16), ' Upload document')) : null));
     if (headBox) drawHead();
   }
   function navItem(key, label, ic, count) {
@@ -447,9 +451,9 @@
     const root = el('div', { class: 'cr' },
       el('div', { class: 'head' }, el('h1', {}, 'Create'),
         el('div', { class: 'cr-head-acts' },
-          el('button', { class: 'btn cr-up', type: 'button', onclick: pickUpload, title: 'Word, PDF or PowerPoint' }, icon('upload', 16), el('span', {}, 'Upload document')),
+          el('button', { class: 'btn cr-up', type: 'button', onclick: e => pickUpload(e), title: 'Word, PDF, PowerPoint or HTML' }, icon('upload', 16), el('span', {}, 'Upload document')),
           el('button', { class: 'btn primary cr-new', type: 'button', onclick: () => templateDialog(curFolder()) }, '+ New document'))),
-      el('p', { class: 'meta' }, 'Write anything: proposals, posts, letters, notes. Everything saves as you type and downloads as Word or PDF. Upload Word files to edit them here, and keep PDFs and PowerPoints alongside.'),
+      el('p', { class: 'meta' }, 'Write anything: proposals, posts, letters, notes. Everything saves as you type and downloads as Word or PDF. Upload Word files to edit them here, and keep PDFs, PowerPoints and HTML pages alongside.'),
       el('div', { class: 'cr-wrap' }, sideBox,
         el('section', { class: 'cr-main' }, mob, headBox, el('div', { class: 'cr-tools' }, search, sort), listBox)));
     drawSide(); drawHead(); drawList();
@@ -465,29 +469,96 @@
   const FILES = 'doc-files', MAX_FILE = 50 * 1024 * 1024;
   const fileStore = () => sb.storage.from(FILES);
   const KINDS = { pdf: ['pdf', 'PDF', 'application/pdf'], ppt: ['ppt', 'PowerPoint', 'application/vnd.ms-powerpoint'],
-    pptx: ['ppt', 'PowerPoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'], doc: ['doc', 'Word', 'application/msword'] };
+    pptx: ['ppt', 'PowerPoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'], doc: ['doc', 'Word', 'application/msword'],
+    html: ['html', 'HTML page', 'text/html'] };
   const fileKind = f => { const k = KINDS[(f && f.ext) || ''] || ['file', 'File', 'application/octet-stream']; return { k: k[0], label: k[1], type: k[2] }; };
   const fileSize = n => n >= 1048576 ? (n / 1048576).toFixed(n >= 10485760 ? 0 : 1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
   const extOf = name => ((name || '').match(/\.([a-z0-9]+)$/i) || [])[1]?.toLowerCase() || '';
   const titleOf = name => (name || 'Untitled').replace(/\.[a-z0-9]+$/i, '').replace(/[_]+/g, ' ').trim().slice(0, 200) || 'Untitled';
-  async function removeFile(d) { if (d && d.file && d.file.path) { try { await fileStore().remove([d.file.path]); } catch (e) {} } }
-  function pickUpload() {
-    const input = el('input', { type: 'file', multiple: true, accept: '.docx,.doc,.pdf,.ppt,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-powerpoint,application/msword', style: 'display:none' });
-    input.addEventListener('change', () => { const files = [...input.files]; input.remove(); if (files.length) uploadFiles(files); });
-    document.body.append(input); input.click();
+  async function removeFile(d) {
+    if (!d || !d.file || !d.file.path) return;
+    const paths = [d.file.path, ...((d.file.versions || []).map(v => v.path))].filter(Boolean);
+    try { await fileStore().remove(paths); } catch (e) {}
   }
-  async function uploadFiles(files) {
-    const folderId = curFolder(), added = [];
+  const html = () => loadScript('/create-html.js?v=1').then(() => window.CreateHTML);
+  const ACCEPT = '.docx,.doc,.pdf,.ppt,.pptx,.html,.htm,.zip,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-powerpoint,application/msword,text/html,application/zip';
+  // Upload: files (Word, PDF, PowerPoint, HTML, or a .zip of an HTML page and its files), or a whole folder
+  function pickUpload(e, projectId) {
+    const btn = e && e.currentTarget;
+    document.querySelector('.cr-upmenu')?.remove();
+    const choose = folder => {
+      menu.remove();
+      const input = el('input', { type: 'file', multiple: true, accept: folder ? null : ACCEPT, style: 'display:none' });
+      if (folder) { input.webkitdirectory = true; input.setAttribute('webkitdirectory', ''); }
+      input.addEventListener('change', () => { const files = [...input.files]; input.remove(); if (!files.length) return; folder ? uploadFolder(files, projectId) : uploadFiles(files, projectId); });
+      document.body.append(input); input.click();
+    };
+    const menu = el('div', { class: 'cr-upmenu', role: 'menu' },
+      el('button', { type: 'button', role: 'menuitem', onclick: () => choose(false) }, el('b', {}, 'Files'), el('small', {}, 'Word, PDF, PowerPoint, HTML, or a .zip of a web page')),
+      el('button', { type: 'button', role: 'menuitem', onclick: () => choose(true) }, el('b', {}, 'A folder'), el('small', {}, 'A web page with its pictures, styles and scripts')));
+    const close = ev => { if (!menu.contains(ev.target) && ev.target !== btn) { menu.remove(); document.removeEventListener('pointerdown', close, true); } };
+    document.addEventListener('pointerdown', close, true);
+    menu.addEventListener('keydown', ev => { if (ev.key === 'Escape') { menu.remove(); btn && btn.focus(); } });
+    document.body.append(menu);
+    if (btn) { const r = btn.getBoundingClientRect(); menu.style.top = (r.bottom + window.scrollY + 6) + 'px'; menu.style.left = Math.max(8, Math.min(r.right + window.scrollX - 300, window.innerWidth - 308)) + 'px'; }
+    menu.querySelector('button').focus();
+  }
+  async function uploadFiles(files, projectId) {
+    const folderId = projectId ? null : curFolder(), added = [];
     for (const f of files) {
       const ext = extOf(f.name);
-      if (!['docx', 'doc', 'pdf', 'ppt', 'pptx'].includes(ext)) { toast(`“${f.name}” isn’t a Word, PDF or PowerPoint file.`); continue; }
+      if (!['docx', 'doc', 'pdf', 'ppt', 'pptx', 'html', 'htm', 'zip'].includes(ext)) { toast(`“${f.name}” isn’t a Word, PDF, PowerPoint, HTML or .zip file.`); continue; }
       if (f.size > MAX_FILE) { toast(`“${f.name}” is over 50 MB. Try a smaller copy.`); continue; }
-      try { added.push(ext === 'docx' ? await importWord(f, folderId) : await keepFile(f, ext, folderId)); }
+      try {
+        if (ext === 'html' || ext === 'htm') added.push(await keepHtml({ html: await f.text(), name: f.name, folderId, projectId }));
+        else if (ext === 'zip') {
+          toast(`Opening “${f.name}”…`);
+          const H = await html(), b = await H.bundle(await H.unzip(f, loadScript));
+          added.push(await keepHtml({ html: b.html, name: f.name.replace(/\.zip$/i, '.html'), folderId, projectId, report: b }));
+        }
+        else { const d = ext === 'docx' ? await importWord(f, folderId) : await keepFile(f, ext, folderId); if (projectId) await patchDoc(d, { project_id: projectId }); added.push(d); }
+      }
       catch (e) { toast(`Couldn’t upload “${f.name}”. ${e && e.message ? e.message : 'Try again.'}`); }
     }
     if (!added.length) return;
-    if (added.length === 1) { toast(added[0].file ? 'Uploaded.' : 'Word file opened as an editable document.'); openDoc(added[0].id); }
+    if (added.length === 1) { if (!added[0]._told) toast(added[0].file ? 'Uploaded.' : 'Word file opened as an editable document.'); openDoc(added[0].id); }
     else { toast(`Uploaded ${added.length} documents.`); rerender(); }
+  }
+  // a folder: its web page and the files it uses become one page
+  async function uploadFolder(files, projectId) {
+    const total = files.reduce((n, f) => n + f.size, 0);
+    if (total > MAX_FILE * 2) { toast('That folder is over 100 MB. Upload just the page and the files it needs.'); return; }
+    try {
+      toast('Putting the page together…');
+      const H = await html(), b = await H.bundle(files.map(f => ({ path: f.webkitRelativePath || f.name, blob: f })));
+      const top = (files[0].webkitRelativePath || '').split('/')[0];
+      const d = await keepHtml({ html: b.html, name: (top || b.entry.replace(/\.html?$/i, '')) + '.html', folderId: projectId ? null : curFolder(), projectId, report: b });
+      openDoc(d.id);
+    } catch (e) { toast(`Couldn’t upload that folder. ${e && e.message ? e.message : 'Try again.'}`); }
+  }
+  // an HTML page: kept as one file, with its words saved for search (and for Claude to read)
+  async function keepHtml({ html: src, name, folderId, projectId, report }) {
+    const H = await html();
+    const blob = new Blob([src], { type: 'text/html' });
+    if (blob.size > MAX_FILE) throw new Error('The page is over 50 MB, even put together.');
+    const path = `${DS.uid()}/${crypto.randomUUID()}.html`;
+    const { error } = await fileStore().upload(path, blob, { contentType: 'text/html', upsert: false });
+    if (error) throw error;
+    const plain = H.textOf(src);
+    let d;
+    try {
+      d = await q(sb.from('documents').insert({ user_id: DS.uid(), title: H.titleIn(src) || titleOf(name), folder_id: folderId || null, project_id: projectId || null,
+        html: null, plain: plain.slice(0, 200000), word_count: plain ? plain.split(/\s+/).length : 0,
+        file: { path, name: (name || 'page.html').slice(0, 200), size: blob.size, type: 'text/html', ext: 'html', versions: [] } }).select(LIST_COLS).single());
+    } catch (e) { fileStore().remove([path]).catch(() => {}); throw e; }
+    C.docs.unshift(d);
+    if (report) {
+      const bits = [report.inlined ? `${plural(report.inlined, 'file')} packed into the page` : null,
+        report.missing.length ? `${plural(report.missing.length, 'file')} it mentions weren’t in the upload` : null,
+        report.pages.length ? `${plural(report.pages.length, 'other page')} left out (one page per upload)` : null].filter(Boolean);
+      toast('Uploaded' + (bits.length ? ': ' + bits.join(', ') : '') + '.'); d._told = true;
+    }
+    return d;
   }
   async function keepFile(f, ext, folderId) {
     toast(`Uploading “${f.name}”…`);
@@ -555,6 +626,7 @@
         el('span', { class: 'cr-ftype cr-ft-' + kind.k }, kind.label),
         title,
         el('div', { class: 'cr-facts' },
+          DS.proj ? DS.proj.picker({ value: doc.project_id || '', className: 'cr-fsel', ariaLabel: 'Project', noneLabel: 'No project', onChange: async v => { try { await patchDoc(doc, { project_id: v }); toast(v ? 'Filed under ' + ((DS.proj.byId(v) || {}).name || 'the project') + '.' : 'Removed from the project.'); } catch (e) {} } }) : null,
           folderSelect(doc.folder_id, async v => { try { await patchDoc(doc, { folder_id: v }); toast(v ? 'Moved.' : 'Moved out of the folder.'); } catch (e) {} }),
           el('button', { class: 'cr-ic' + (doc.pinned ? ' on' : ''), type: 'button', title: doc.pinned ? 'Unpin' : 'Pin to the top', 'aria-pressed': String(!!doc.pinned), 'aria-label': 'Pin',
             onclick: async e => { await patchDoc(doc, { pinned: !doc.pinned }); e.currentTarget.classList.toggle('on', doc.pinned); e.currentTarget.setAttribute('aria-pressed', String(doc.pinned)); } }, icon('star', 17)),
@@ -562,7 +634,10 @@
           el('button', { class: 'btn danger cr-small', type: 'button', onclick: async () => { await trashDoc(doc); back(); } }, icon('trash', 16), ' Move to Trash'))),
       el('p', { class: 'meta cr-fmeta' }, `${doc.file.name} · ${fileSize(doc.file.size)} · uploaded ${when(doc.created_at)}`),
       body);
-    if (kind.k === 'pdf') {
+    if (kind.k === 'html') {
+      root.classList.add('cr-hview');
+      htmlViewer(doc, body, root, back);
+    } else if (kind.k === 'pdf') {
       body.append(el('p', { class: 'meta' }, 'Opening…'));
       fileStore().download(doc.file.path).then(({ data, error }) => {
         if (error || !data) { body.replaceChildren(el('p', { class: 'meta' }, 'Couldn’t open the PDF. Try Download.')); return; }
@@ -577,6 +652,85 @@
         el('button', { class: 'btn primary', type: 'button', onclick: download }, icon('download', 16), ' Download')));
     }
     return root;
+  }
+
+  /* ---------- an HTML page: shown in a sealed frame, with versions ---------- */
+  async function htmlViewer(doc, body, root, back) {
+    const H = await html();
+    const st = { safe: false, full: false, ver: null }; // ver: an earlier version being looked at
+    let src = '';
+    const fetchText = async path => { const { data, error } = await fileStore().download(path); if (error || !data) throw error || new Error('missing'); return data.text(); };
+    const stage = el('div', { class: 'cr-hstage' }, el('p', { class: 'meta' }, 'Opening…'));
+    const verSel = el('select', { class: 'cr-fsel cr-hver', 'aria-label': 'Version' });
+    const fill = () => {
+      const vs = doc.file.versions || [];
+      verSel.replaceChildren(el('option', { value: '' }, 'Latest' + (doc.file.at ? ` · ${when(doc.file.at)}` : '')), ...vs.map((v, i) => el('option', { value: String(i) }, `Earlier · ${when(v.at)}`)));
+      verSel.value = st.ver == null ? '' : String(st.ver);
+      verSel.hidden = !vs.length;
+      restore.hidden = st.ver == null;
+    };
+    const show = async () => {
+      stage.replaceChildren(el('p', { class: 'meta' }, 'Opening…'));
+      try { src = await fetchText(st.ver == null ? doc.file.path : doc.file.versions[st.ver].path); }
+      catch (e) { stage.replaceChildren(el('p', { class: 'meta' }, 'Couldn’t open the page. Check your connection, or use Download.')); return; }
+      stage.replaceChildren(H.frame(src, { safe: st.safe, title: doc.title || 'HTML page' }));
+    };
+    const safeBtn = el('button', { type: 'button', class: 'btn cr-small cr-hsafe', 'aria-pressed': 'false', title: 'Turn the page’s own code off (it shows as a still layout)',
+      onclick: () => { st.safe = !st.safe; safeBtn.setAttribute('aria-pressed', String(st.safe)); safeBtn.lastChild.textContent = st.safe ? 'Safe view on' : 'Safe view'; show(); } }, icon('shield', 15), el('span', {}, 'Safe view'));
+    const fullBtn = el('button', { type: 'button', class: 'btn cr-small', title: 'Fill the screen (Esc to come back)', onclick: () => setFull(!st.full) }, icon('expand', 15), el('span', {}, 'Full screen'));
+    const setFull = on => { st.full = on; root.classList.toggle('cr-hfull', on); document.documentElement.classList.toggle('cr-hfull-on', on); fullBtn.lastChild.textContent = on ? 'Exit full screen' : 'Full screen'; };
+    const onKey = e => { if (e.key === 'Escape' && st.full && !document.querySelector('dialog[open]')) setFull(false); };
+    document.addEventListener('keydown', onKey);
+    new MutationObserver((_, mo) => { if (!root.isConnected) { document.removeEventListener('keydown', onKey); document.documentElement.classList.remove('cr-hfull-on'); mo.disconnect(); } }).observe(document.body, { childList: true, subtree: true });
+    const tabBtn = el('button', { type: 'button', class: 'btn cr-small', title: 'Open it in a new tab', onclick: () => { if (src) H.openTab(src, doc.title || 'HTML page', st.safe); } }, icon('external', 15), el('span', {}, 'New tab'));
+    const restore = el('button', { type: 'button', class: 'btn cr-small', hidden: true, onclick: async () => {
+      if (st.ver == null) return;
+      const vs = doc.file.versions.slice(), old = vs[st.ver];
+      vs.splice(st.ver, 1, { path: doc.file.path, size: doc.file.size, at: doc.file.at || doc.updated_at, name: doc.file.name });
+      const plain = H.textOf(src);
+      try { await patchDoc(doc, { file: { ...doc.file, path: old.path, size: old.size, at: new Date().toISOString(), versions: vs }, plain: plain.slice(0, 200000), word_count: plain ? plain.split(/\s+/).length : 0 }); }
+      catch (e) { return; }
+      st.ver = null; fill(); toast('Restored. The version you replaced is kept as an earlier one.'); show();
+    } }, 'Restore this version');
+    verSel.addEventListener('change', () => { st.ver = verSel.value === '' ? null : +verSel.value; fill(); show(); });
+    const replace = el('button', { type: 'button', class: 'btn cr-small', title: 'Upload a newer copy (this one is kept as an earlier version)', onclick: () => {
+      const input = el('input', { type: 'file', accept: '.html,.htm,.zip,text/html,application/zip', style: 'display:none' });
+      input.addEventListener('change', async () => {
+        const f = input.files[0]; input.remove(); if (!f) return;
+        try {
+          toast('Uploading the new version…');
+          const text = /\.zip$/i.test(f.name) ? (await H.bundle(await H.unzip(f, loadScript))).html : await f.text();
+          await newVersion(doc, text, f.name);
+          st.ver = null; fill(); toast('Updated. The previous version is kept under Version.'); show();
+        } catch (e) { toast(`Couldn’t update it. ${e && e.message ? e.message : 'Try again.'}`); }
+      });
+      document.body.append(input); input.click();
+    } }, icon('upload', 15), el('span', {}, 'New version'));
+    const editBtn = el('button', { type: 'button', class: 'btn cr-small', title: 'Copy the page’s text into a document you can edit', onclick: async () => {
+      if (!src) return;
+      try {
+        const d = await q(sb.from('documents').insert({ user_id: DS.uid(), title: ((doc.title || 'Page') + ' (editable)').slice(0, 200), folder_id: doc.folder_id, project_id: doc.project_id,
+          html: H.editable(src), page: { size: 'A4', margins: 'normal', orient: 'portrait' } }).select(LIST_COLS).single());
+        C.docs.unshift(d); toast('Made an editable copy. The page itself is unchanged.'); openDoc(d.id);
+      } catch (e) {}
+    } }, icon('edit', 15), el('span', {}, 'Editable copy'));
+    body.replaceChildren(el('div', { class: 'cr-htools' }, safeBtn, fullBtn, tabBtn, replace, editBtn, verSel, restore,
+      el('button', { type: 'button', class: 'btn cr-small cr-hexit', onclick: () => setFull(false) }, '× Close full screen')), stage);
+    fill(); show();
+  }
+  async function newVersion(doc, text, name) {
+    const H = await html();
+    const blob = new Blob([text], { type: 'text/html' });
+    if (blob.size > MAX_FILE) throw new Error('The page is over 50 MB.');
+    const path = `${DS.uid()}/${crypto.randomUUID()}.html`;
+    const { error } = await fileStore().upload(path, blob, { contentType: 'text/html', upsert: false });
+    if (error) throw error;
+    const versions = [{ path: doc.file.path, size: doc.file.size, at: doc.file.at || doc.updated_at, name: doc.file.name }, ...(doc.file.versions || [])];
+    const drop = versions.splice(10); // keep the ten before this one
+    const plain = H.textOf(text);
+    await patchDoc(doc, { file: { ...doc.file, path, size: blob.size, name: (name || doc.file.name).replace(/\.zip$/i, '.html').slice(0, 200), at: new Date().toISOString(), versions },
+      plain: plain.slice(0, 200000), word_count: plain ? plain.split(/\s+/).length : 0, updated_at: new Date().toISOString() });
+    if (drop.length) fileStore().remove(drop.map(v => v.path)).catch(() => {});
   }
 
   /* ---------- the editor ---------- */
@@ -1013,6 +1167,7 @@
       const docs = live().filter(d => ids.includes(d.project_id)).sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (b.updated_at > a.updated_at ? 1 : -1));
       box.replaceChildren(
         el('div', { class: 'cr-pj-head' }, el('h2', {}, 'Documents'), docs.length ? el('span', { class: 'cr-count' }, String(docs.length)) : null,
+          el('button', { class: 'btn cr-small', type: 'button', onclick: e => pickUpload(e, mainId), title: 'Word, PDF, PowerPoint or HTML, filed under this project' }, icon('upload', 15), ' Upload'),
           el('button', { class: 'btn cr-small', type: 'button', onclick: () => templateDialog(null, mainId) }, '+ New document')),
         docs.length ? el('div', { class: 'cr-cards' }, docs.slice(0, 12).map(card))
           : el('p', { class: 'meta' }, 'No documents for this project yet. Start one here, or pick this project on any document in Create.'),

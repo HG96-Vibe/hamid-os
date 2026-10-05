@@ -12,7 +12,7 @@ const INSTRUCTIONS = `Hamid OS is Hamid's personal operating system: daily / wee
 Capital has three books: Personal and the companies (Augustova, PCTR). Amounts are in pounds (GBP). Money out is spending; money in is income.
 Direct debits, loans and lending are a separate record and are not counted in money in / out until a direct debit is ticked as paid.
 "To play with" = this month's money in − money out − direct debits still expected this month (Personal only).
-When asked to analyse how he's doing, use get_insights. A thought to sort later goes in the Inbox (add_to_inbox). Something done every day (or on set days) is a repeating task (add_repeating_task), not a one-off task.
+When asked to analyse how he's doing, use get_insights. A thought to sort later goes in the Inbox (add_to_inbox). Web pages (HTML) you make for him can be saved into Create / a project with save_html_page; he views them inside Hamid OS. Something done every day (or on set days) is a repeating task (add_repeating_task), not a one-off task.
 When adding something, default to the Personal book unless a company is named. Use the list tools first to find ids before updating or deleting.`;
 
 /* ---------- context for one request ---------- */
@@ -21,7 +21,7 @@ function ctxOf(token) {
   const db = L.db(token);
   let tz = null, books = null;
   return {
-    db, uid: p.sub,
+    db, uid: p.sub, files: L.files(token, 'doc-files'),
     async today() { if (!tz) { const s = await db.get('settings?select=tz&limit=1').catch(() => []); tz = (s[0] && s[0].tz) || 'Europe/London'; } return L.todayIn(tz); },
     async books() {
       if (!books) {

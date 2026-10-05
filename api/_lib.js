@@ -90,6 +90,26 @@ function db(token) {
   };
 }
 const enc = v => encodeURIComponent(v);
+// private file storage, as the signed-in person (the same owner-only, 2FA rules as the app)
+function files(token, bucket) {
+  const h = { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}` };
+  const url = p => `${SUPABASE_URL}/storage/v1/object/${bucket}/${p.split('/').map(encodeURIComponent).join('/')}`;
+  const fail = async (r, what) => { const t = await r.text().catch(() => ''); let m = t; try { m = JSON.parse(t).message || t; } catch (e) {} const e = new Error(`${what}: ${m || r.status}`); e.status = r.status; throw e; };
+  return {
+    async put(path, body, type) { const r = await fetch(url(path), { method: 'POST', headers: { ...h, 'Content-Type': type, 'x-upsert': 'false' }, body }); if (!r.ok) await fail(r, 'Upload failed'); },
+    async text(path) { const r = await fetch(`${SUPABASE_URL}/storage/v1/object/authenticated/${bucket}/${path.split('/').map(encodeURIComponent).join('/')}`, { headers: h }); if (!r.ok) await fail(r, 'Download failed'); return r.text(); },
+    async remove(paths) { if (!paths.length) return; const r = await fetch(`${SUPABASE_URL}/storage/v1/object/${bucket}`, { method: 'DELETE', headers: { ...h, 'Content-Type': 'application/json' }, body: JSON.stringify({ prefixes: paths }) }); if (!r.ok) await fail(r, 'Remove failed'); }
+  };
+}
+// the words on an HTML page (no code or styles), and its <title>
+const ENT = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', '#39': "'" };
+const decode = s => s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => e[0] === '#' ? String.fromCodePoint(e[1].toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : +e.slice(1)) : (ENT[e.toLowerCase()] ?? m));
+function htmlText(html) {
+  return decode(String(html || '').replace(/<(script|style|noscript|template|svg|head)\b[\s\S]*?<\/\1\s*>/gi, ' ').replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<\/?(p|div|section|article|header|footer|main|aside|h[1-6]|li|ul|ol|tr|table|br|hr|blockquote|pre|figure|figcaption|dt|dd)\b[^>]*>/gi, '\n').replace(/<[^>]+>/g, ' '))
+    .replace(/[ \t\f\v\u00a0]+/g, ' ').replace(/ *\n[ \n]*/g, '\n').trim();
+}
+const htmlTitle = html => { const m = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(String(html || '')); return m ? decode(m[1].replace(/<[^>]+>/g, '')).trim().slice(0, 200) : ''; };
 
 /* ---------- dates (in your time zone) ---------- */
 function todayIn(tz) {
@@ -128,5 +148,5 @@ const ddKey = (p, d) => `dd|${p.id}|${d}`;
 const pounds = p => (p < 0 ? '-' : '') + '£' + (Math.abs(p) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const toPence = v => { const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/[£,\s]/g, '')); return Number.isFinite(n) ? Math.round(n * 100) : null; };
 
-module.exports = { SUPABASE_URL, SUPABASE_KEY, ORIGIN, readBody, send, queryOf, seal, unseal, sha256url, jwtPayload, refreshSession, db, enc,
+module.exports = { SUPABASE_URL, SUPABASE_KEY, ORIGIN, readBody, send, queryOf, seal, unseal, sha256url, jwtPayload, refreshSession, db, enc, files, htmlText, htmlTitle,
   todayIn, addDays, monthStart, addMonths, monthEnd, weekStart, nth, cycleOf, afterCycle, datesIn, ddKey, pounds, toPence };

@@ -166,3 +166,12 @@ outcomes per company and project for a period (this month by default; at most th
 untagged work under "No project" where it can be tagged. Carried copies don't count; repeating tasks fold
 into one line. Project pages show "Everything done" (six months), and Insights has "Where your work went".
 The connector's `done_by_project` tool answers the same questions.
+
+## HTML pages (create-html.js)
+
+Create (and project pages) can upload HTML: a single .html file, a folder, or a .zip. Folders and zips are put
+together in the browser into one self-contained page (styles, scripts, pictures and fonts written into it), kept as
+one .html file in the private doc-files bucket with up to ten earlier versions. Pages open in a sealed frame
+(sandbox without same-origin): their code runs but can't reach Hamid OS or the sign-in; Safe view turns code off.
+Also: full screen, new tab (still sealed), new version / restore, and an editable copy as a normal document.
+The connector can save_html_page (new, or a new version by id) and read_html_page.

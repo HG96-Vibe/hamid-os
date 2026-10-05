@@ -345,3 +345,34 @@ html.light .cr-sw{border-color:rgba(0,0,0,.12)}
 .cr-fcard .btn{display:inline-flex;align-items:center;gap:6px}
 html.light .cr-fcard,html.light .cr-pdf{box-shadow:0 10px 28px rgba(60,50,20,.12);border:1px solid rgba(30,27,75,.06)}
 @media (max-width:700px){.cr-up span{display:none}.cr-up{padding:8px 11px}.cr-pdf{height:70vh;min-height:360px}}
+
+/* HTML pages */
+.cr-ft-html{background:#7c3aed}
+.cr-upmenu{position:absolute;z-index:60;width:300px;background:#fbfbf8;color:#1e1b4b;border-radius:14px;padding:6px;box-shadow:0 18px 44px rgba(8,5,30,.45);display:grid;gap:2px}
+.cr-upmenu button{display:grid;gap:2px;text-align:left;border:0;background:transparent;color:#1e1b4b;border-radius:10px;padding:10px 12px;cursor:pointer;font:inherit}
+.cr-upmenu button:hover,.cr-upmenu button:focus-visible{background:#f0eee6;outline:none}
+.cr-upmenu b{font:700 14.5px var(--ui)}
+.cr-upmenu small{color:#5b5f86;font-size:12.5px}
+.cr-htools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:4px 0 10px}
+.cr-htools .btn{display:inline-flex;align-items:center;gap:6px}
+.cr-hsafe[aria-pressed="true"]{background:#047857;border-color:#047857;color:#fff}
+.cr-hver{max-width:220px}
+.cr-hexit{display:none}
+.cr-hstage{background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 14px 36px rgba(8,5,30,.3);height:calc(100dvh - 240px);min-height:520px}
+.cr-hstage>.meta{padding:20px;color:#5b5f86}
+.cr-hframe{display:block;border:0;width:100%;height:100%;background:#fff}
+/* full screen inside the OS */
+.cr-hfull{position:fixed;inset:0;z-index:1000;background:#0f0d2e;padding:10px;display:flex;flex-direction:column;margin:0;max-width:none}
+.cr-hfull>:not(.cr-fbody){display:none}
+.cr-hfull .cr-fbody{flex:1;display:flex;flex-direction:column;min-height:0}
+.cr-hfull .cr-htools{margin:0 0 8px}
+.cr-hfull .cr-htools>:not(.cr-hsafe):not(.cr-hexit){display:none}
+.cr-hfull .cr-hexit{display:inline-flex;margin-left:auto}
+.cr-hfull .cr-hstage{flex:1;height:auto;min-height:0;border-radius:10px}
+html.cr-hfull-on,html.cr-hfull-on body{overflow:hidden}
+@media (max-width:640px){
+  .cr-hstage{height:calc(100dvh - 200px);min-height:420px;border-radius:10px}
+  .cr-htools .btn span{font-size:13px}
+}
+.cr-htools [hidden],.cr-htools .btn.cr-hexit{display:none}
+.cr-hfull .cr-htools .btn.cr-hexit{display:inline-flex}
