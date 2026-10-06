@@ -750,6 +750,7 @@
         if (document.fullscreenElement || document.webkitFullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
         layer.remove(); document.documentElement.classList.remove('cr-hlayer-on');
         document.removeEventListener('keydown', onKey, true); document.removeEventListener('fullscreenchange', onFs); document.removeEventListener('webkitfullscreenchange', onFs);
+        if (C.from) { const v = C.from; C.from = null; C.open = null; DS.go(v); }
       };
       const onKey = e => {
         if (e.key !== 'Escape' || document.querySelector('dialog[open]')) return;
@@ -760,7 +761,8 @@
       };
       layer = el('div', { class: 'cr-hlayer', role: 'dialog', 'aria-modal': 'true', 'aria-label': doc.title || 'HTML page', onclick: e => { if (!e.target.closest('.cr-hmore,[aria-haspopup]')) more.hidden = true; } },
         el('div', { class: 'cr-hbar' },
-          el('button', { type: 'button', class: 'cr-hb cr-hback', title: 'Back to Documents', 'aria-label': 'Back to Documents', onclick: () => { close(); back(); } }, icon('back', 16), el('span', { class: 'cr-hbl' }, 'Documents')),
+          C.from ? el('button', { type: 'button', class: 'cr-hb cr-hback', title: 'Back to Home', 'aria-label': 'Back to Home', onclick: () => close() }, icon('back', 16), el('span', { class: 'cr-hbl' }, 'Home'))
+            : el('button', { type: 'button', class: 'cr-hb cr-hback', title: 'Back to Documents', 'aria-label': 'Back to Documents', onclick: () => { close(); back(); } }, icon('back', 16), el('span', { class: 'cr-hbl' }, 'Documents')),
           el('span', { class: 'cr-ftype cr-ft-html' }, 'HTML'),
           el('b', { class: 'cr-htitle', title: doc.title || '' }, doc.title || 'HTML page'),
           el('div', { class: 'cr-hacts' }, verSel, restore, safeBtn, fullBtn, tabBtn, el('div', { class: 'cr-hmorewrap' }, pdfBtn), el('div', { class: 'cr-hmorewrap' }, moreBtn, more)),
@@ -819,8 +821,9 @@
   }
 
   /* ---------- the editor ---------- */
-  async function openDoc(id, { fresh } = {}) {
-    C.open = id;
+  // from: the page to go back to when an HTML page opened from there is closed (e.g. 'home' for a brief)
+  async function openDoc(id, { fresh, from } = {}) {
+    C.open = id; C.from = from || null;
     if (state.view !== 'create') DS.go('create'); else refresh();
     window.scrollTo(0, 0);
     // a new document starts with its title selected, unless you have already clicked into the page

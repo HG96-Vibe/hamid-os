@@ -72,8 +72,15 @@
       long ? el('button', { class: 'linkish bf-more', onclick: e => { body.classList.toggle('clip'); e.target.textContent = body.classList.contains('clip') ? 'Read all' : 'Show less'; } }, 'Read all') : null,
       suggestionList(b),
       el('div', { class: 'bf-actions' },
+        b.document_id ? el('button', { class: 'btn primary', onclick: () => openPage(b) }, 'Open full brief') : null,
         el('button', { class: 'btn', onclick: async () => { await q(sb.from('briefs').update({ read_at: new Date().toISOString() }).eq('id', b.id)); onRead(); } }, 'Done reading'),
         el('button', { class: 'linkish', onclick: earlier }, 'Earlier briefs')));
+  }
+
+  // the full brief (an HTML page in Create) opens full screen over Home and closes back to Home
+  function openPage(b) {
+    document.querySelector('dialog.bf-dlg[open]')?.close();
+    if (DS.create && DS.create.open) DS.create.open(b.document_id, { from: 'home' });
   }
 
   async function earlier() {
@@ -81,7 +88,7 @@
     const dlg = el('dialog', { class: 'bf-dlg' });
     const list = el('div', {}, rows.length ? rows.map(b => el('details', { class: 'bf-old' },
       el('summary', {}, el('b', {}, b.title), el('small', { class: 'meta' }, ` · ${kindName(b.kind)} · ${new Date(b.created_at).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}`)),
-      md(b.body), suggestionList(b))) : el('p', { class: 'meta' }, 'No briefs yet. Claude writes one each weekday morning and a review on Sunday.'));
+      md(b.body), b.document_id ? el('button', { class: 'btn primary cr-small', onclick: () => openPage(b) }, 'Open full brief') : null, suggestionList(b))) : el('p', { class: 'meta' }, 'No briefs yet. Claude writes one each weekday morning and a review on Sunday.'));
     dlg.append(el('div', { class: 'bf-dlgh' }, el('h2', {}, 'Briefs from Claude'), el('button', { class: 'btn', onclick: () => dlg.close() }, 'Close')), list);
     dlg.addEventListener('close', () => dlg.remove());
     document.body.append(dlg); dlg.showModal();

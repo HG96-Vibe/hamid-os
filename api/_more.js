@@ -384,7 +384,7 @@ module.exports = h => {
 
     /* ===================== HTML pages ===================== */
     { name: 'save_html_page', title: 'Save an HTML page',
-      description: "Save a web page (a complete HTML document: dashboards, reports, one-pagers, mock-ups) into Create, optionally filed under a project, so Hamid can open it inside Hamid OS. It runs in a sealed frame there: scripts, charts and CDN libraries work, but it can't reach his data, and localStorage only lasts while it's open. Keep it to one self-contained file (put CSS and JS inline; images as data: links or https URLs). To update an existing page, pass its id: the old copy is kept as an earlier version.",
+      description: "Save a web page (a complete HTML document: dashboards, reports, one-pagers, mock-ups) into Create, optionally filed under a project, so Hamid can open it inside Hamid OS. It runs in a sealed frame there: scripts, charts and CDN libraries work, but it can't reach his data, and localStorage only lasts while it's open. Keep it to one self-contained file (put CSS and JS inline; images as data: links or https URLs). To update an existing page, pass its id: the old copy is kept as an earlier version. For a morning brief or weekly review use post_brief instead (it can carry an HTML page too), so it shows on Home.",
       inputSchema: S({ html: str('The full HTML document'), title: str('Title (defaults to the page\'s <title>)'), project: str('Project or company to file it under (optional)'), id: str('An existing HTML page\'s id, to save a new version of it') }, ['html']),
       async run(a, c) {
         const src = String(need(a.html, 'html'));

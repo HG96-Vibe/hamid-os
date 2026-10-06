@@ -65,14 +65,35 @@ module.exports = h => {
   return [
     /* ===================== Briefs from Claude ===================== */
     { name: 'post_brief', title: 'Post a brief to Home',
-      description: "Post a brief to the top of Hamid's Home page: the morning brief (kind 'morning'), the weekly review (kind 'weekly') or anything else ('other'). Write the body in short markdown (## headings, - bullets, **bold**); keep a morning brief to a minute's read. Suggestions are tasks he can add with one tap: when 'today' (today's sheet) or 'week' (this week's priorities). By default his phone gets a notification.",
+      description: "Post a brief to the top of Hamid's Home page: the morning brief (kind 'morning'), the weekly review (kind 'weekly') or anything else ('other'). Write the body in short markdown (## headings, - bullets, **bold**); keep a morning brief to a minute's read. Suggestions are tasks he can add with one tap: when 'today' (today's sheet) or 'week' (this week's priorities). For a richer version, also pass html (a complete, self-contained HTML page): it's saved in Create and opens full screen from the brief on Home with 'Open full brief'. Or pass page_id to link an HTML page already saved. Always use this tool for briefs and reviews (not save_html_page alone), so they show on Home. By default his phone gets a notification.",
       inputSchema: S({ kind: { type: 'string', enum: ['morning', 'weekly', 'other'] }, title: str('A short headline (under 100 characters)'), body: str('The brief, in short markdown'),
         suggestions: { type: 'array', description: 'Up to 7 suggested tasks', items: { type: 'object', properties: { title: str('The task'), when: { type: 'string', enum: ['today', 'week'] } }, required: ['title'] } },
+        html: str('Optional: the full brief as a complete HTML page, opened from Home'), page_id: str('Optional: link an HTML page already in Create instead (its id)'),
         notify: bool('Send a phone notification (default true)') }, ['title', 'body']),
       async run(a, c) {
         const kind = ['morning', 'weekly', 'other'].includes(a.kind) ? a.kind : 'other';
         const sug = (Array.isArray(a.suggestions) ? a.suggestions : []).slice(0, 7).map(s => ({ title: need(text(s && s.title, 300), 'suggestion title'), when: s.when === 'today' ? 'today' : 'week' }));
-        const [b] = await c.db.insert('briefs', { user_id: c.uid, kind, title: need(text(a.title, 200), 'title'), body: need(text(a.body, 50000), 'body'), suggestions: sug.length ? sug : null });
+        const title = need(text(a.title, 200), 'title');
+        let document_id = null;
+        if (a.page_id) {
+          const d = (await c.db.get(`documents?select=id,file&id=eq.${uuid(a.page_id, 'page_id')}&deleted_at=is.null`))[0];
+          if (!d) throw new UserError('No document with that page_id.');
+          document_id = d.id;
+        } else if (a.html) {
+          const src = String(a.html);
+          if (!/<[a-z!]/i.test(src)) throw new UserError('html doesn\'t look like an HTML page.');
+          const size = Buffer.byteLength(src, 'utf8');
+          if (size > 50 * 1024 * 1024) throw new UserError('The page is over 50 MB.');
+          const plain = L.htmlText(src).slice(0, 200000), path = `${c.uid}/${require('crypto').randomUUID()}.html`;
+          const ptitle = (L.htmlTitle(src) || title).slice(0, 200);
+          await c.files.put(path, src, 'text/html');
+          try {
+            const [d] = await c.db.insert('documents', { user_id: c.uid, title: ptitle, html: null, plain, word_count: plain ? plain.split(/\s+/).length : 0, project_id: null,
+              file: { path, name: ptitle.replace(/[^\w .-]+/g, '').trim().slice(0, 190) + '.html', size, type: 'text/html', ext: 'html', at: new Date().toISOString(), versions: [] } });
+            document_id = d.id;
+          } catch (e) { await c.files.remove([path]).catch(() => {}); throw e; }
+        }
+        const [b] = await c.db.insert('briefs', { user_id: c.uid, kind, title, body: need(text(a.body, 50000), 'body'), suggestions: sug.length ? sug : null, document_id });
         let notified = 0;
         if (a.notify !== false && c.token) {
           try {
@@ -81,7 +102,7 @@ module.exports = h => {
             if (r.ok) notified = (await r.json()).sent || 0;
           } catch (e) { /* the brief is saved either way */ }
         }
-        return { posted: { id: b.id, kind, title: b.title, suggestions: sug.length }, phones_notified: notified, shows_on: 'Home (until he marks it read)' };
+        return { posted: { id: b.id, kind, title: b.title, suggestions: sug.length, full_page: document_id || undefined }, phones_notified: notified, shows_on: 'Home (until he marks it read)' };
       } },
     { name: 'list_briefs', title: 'Earlier briefs', ro: true,
       description: 'Briefs already posted (newest first), so a new one can follow on from the last without repeating it.',
