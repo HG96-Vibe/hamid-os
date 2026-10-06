@@ -145,6 +145,36 @@ module.exports = h => {
         return { today: t0, through: to, agenda: items };
       } },
 
+    /* ===================== WHOOP ===================== */
+    { name: 'get_whoop', title: 'WHOOP: recovery, sleep, strain', ro: true,
+      description: "Hamid's WHOOP data day by day (newest first): recovery % (green 67+, yellow 34–66, red under 34), HRV, resting heart rate, last night's sleep (time asleep, performance vs need, deep/REM), strain, steps and workouts, with averages. Use it in morning briefs (how to pace the day) and weekly reviews (sleep and recovery trend). Says so if WHOOP isn't connected.",
+      inputSchema: S({ days: num('How many days back, including today (default 7, max 90)') }),
+      async run(a, c) {
+        const link = (await c.db.get('whoop_link?select=first_name,last_sync_at,last_error&limit=1'))[0];
+        if (!link) return { connected: false, note: 'WHOOP isn\'t connected. Hamid can connect it in Settings → WHOOP.' };
+        const t0 = await c.today(), n = Math.min(90, Math.max(1, Math.round(+a.days || 7))), from = L.addDays(t0, -(n - 1));
+        const [days, sleeps, works] = await Promise.all([
+          c.db.get(`whoop_days?select=day,recovery,hrv,rhr,spo2,skin_temp,strain,kilojoule,steps,avg_hr,max_hr&day=gte.${from}&order=day.desc,started_at.desc&limit=200`),
+          c.db.get(`whoop_sleeps?select=day,nap,asleep_min,in_bed_min,need_min,performance,efficiency,consistency,deep_min,rem_min,awake_min,respiratory_rate,started_at,ended_at&day=gte.${from}&order=ended_at.desc&limit=300`),
+          c.db.get(`whoop_workouts?select=day,sport,strain,avg_hr,max_hr,kilojoule,distance_m,started_at,ended_at&day=gte.${from}&order=started_at.desc&limit=300`)]);
+        const h = m => (m == null ? undefined : `${Math.floor(m / 60)}h ${m % 60}m`);
+        const zone = r => (r == null ? undefined : r >= 67 ? 'green' : r >= 34 ? 'yellow' : 'red');
+        const dates = [...new Set([...days.map(d => d.day), ...sleeps.map(s => s.day)])].sort().reverse();
+        const out = dates.map(day => {
+          const d = days.find(x => x.day === day) || {}, z = sleeps.find(x => x.day === day && !x.nap);
+          return { date: day, recovery: d.recovery ?? undefined, zone: zone(d.recovery), hrv_ms: d.hrv ?? undefined, resting_hr: d.rhr ?? undefined, strain: d.strain ?? undefined, steps: d.steps ?? undefined,
+            sleep: z ? { asleep: h(z.asleep_min), needed: h(z.need_min), performance: z.performance ?? undefined, deep: h(z.deep_min), rem: h(z.rem_min), awake: h(z.awake_min), bedtime: z.started_at, woke: z.ended_at } : undefined,
+            naps: sleeps.filter(x => x.day === day && x.nap).map(x => h(x.asleep_min)),
+            workouts: works.filter(w => w.day === day).map(w => ({ sport: w.sport, strain: w.strain, avg_hr: w.avg_hr, minutes: Math.round((Date.parse(w.ended_at) - Date.parse(w.started_at)) / 60000), distance_km: w.distance_m ? Math.round(w.distance_m / 100) / 10 : undefined })) };
+        });
+        const av = xs => { const v = xs.filter(x => x != null); return v.length ? Math.round(v.reduce((s, x) => s + x, 0) / v.length * 10) / 10 : undefined; };
+        const main = sleeps.filter(x => !x.nap);
+        return { connected: true, last_synced: link.last_sync_at, sync_problem: link.last_error || undefined, today: t0,
+          averages: { recovery: av(days.map(d => d.recovery)), hrv_ms: av(days.map(d => d.hrv)), resting_hr: av(days.map(d => d.rhr)), strain: av(days.map(d => d.strain)),
+            sleep: h(av(main.map(s => s.asleep_min)) != null ? Math.round(av(main.map(s => s.asleep_min))) : null), sleep_performance: av(main.map(s => s.performance)) },
+          days: out };
+      } },
+
     /* ===================== People ===================== */
     { name: 'list_people', title: 'People', ro: true,
       description: 'People in Hamid OS (contacts with follow-ups), optionally filtered by a name / company search, or only those with a follow-up due.',
