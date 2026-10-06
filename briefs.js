@@ -1,6 +1,7 @@
 // Claude's briefs on Home: the morning brief (weekdays) and the weekly review (Sundays) that Claude writes through the
-// connector (post_brief). The newest unread one shows at the top of Home with its suggestions; "Add" puts a suggestion
-// on today's sheet or this week's priorities. "Done reading" files it away; "Earlier briefs" lists the last 20.
+// connector (post_brief). The newest one shows at the top of Home with its suggestions; "Add" puts a suggestion on
+// today's sheet or this week's priorities. "Open full brief" opens its HTML page; "Done reading" folds the card to one
+// line (it stays until a newer brief arrives); "Earlier briefs" lists the last 20.
 (function () {
   'use strict';
   const DS = window.DS; if (!DS) return;
@@ -60,21 +61,40 @@
   }
   const kindName = k => k === 'weekly' ? 'Weekly review' : k === 'morning' ? 'Morning brief' : 'From Claude';
 
-  function card(b, onRead) {
-    const body = md(b.body);
-    const long = b.body.length > 900;
-    if (long) body.classList.add('clip');
-    return el('section', { class: 'bf-card', 'aria-label': kindName(b.kind) },
-      el('div', { class: 'bf-head' },
-        el('div', {}, el('span', { class: 'bf-kind' }, kindName(b.kind)), el('h2', {}, b.title)),
-        el('small', { class: 'meta' }, timeAgo ? timeAgo(b.created_at) : '')),
-      body,
-      long ? el('button', { class: 'linkish bf-more', onclick: e => { body.classList.toggle('clip'); e.target.textContent = body.classList.contains('clip') ? 'Read all' : 'Show less'; } }, 'Read all') : null,
-      suggestionList(b),
-      el('div', { class: 'bf-actions' },
-        b.document_id ? el('button', { class: 'btn primary', onclick: () => openPage(b) }, 'Open full brief') : null,
-        el('button', { class: 'btn', onclick: async () => { await q(sb.from('briefs').update({ read_at: new Date().toISOString() }).eq('id', b.id)); onRead(); } }, 'Done reading'),
-        el('button', { class: 'linkish', onclick: earlier }, 'Earlier briefs')));
+  // The brief on Home. "Done reading" folds it down to one line (it stays on Home until a newer brief arrives);
+  // "Show" opens it out again.
+  function card(b) {
+    const box = el('section', { class: 'bf-card', 'aria-label': kindName(b.kind) });
+    const pageBtn = cls => b.document_id ? el('button', { class: cls, onclick: () => openPage(b) }, 'Open full brief') : null;
+    const when = el('small', { class: 'meta' }, timeAgo ? timeAgo(b.created_at) : '');
+    const setRead = async on => {
+      b.read_at = on ? new Date().toISOString() : null;
+      paint();
+      try { await q(sb.from('briefs').update({ read_at: b.read_at }).eq('id', b.id)); } catch (e) {}
+    };
+    function paint() {
+      box.classList.toggle('min', !!b.read_at);
+      if (b.read_at) {
+        box.replaceChildren(el('div', { class: 'bf-mini' },
+          el('div', { class: 'bf-minit' }, el('span', { class: 'bf-kind' }, kindName(b.kind)), el('b', { title: b.title }, b.title)),
+          el('div', { class: 'bf-miniacts' }, pageBtn('btn primary cr-small'),
+            el('button', { class: 'btn cr-small', 'aria-label': 'Show the brief', onclick: () => setRead(false) }, 'Show'),
+            el('button', { class: 'linkish', onclick: earlier }, 'Earlier briefs'))));
+        return;
+      }
+      const body = md(b.body), long = b.body.length > 900;
+      if (long) body.classList.add('clip');
+      box.replaceChildren(
+        el('div', { class: 'bf-head' }, el('div', {}, el('span', { class: 'bf-kind' }, kindName(b.kind)), el('h2', {}, b.title)), when),
+        body,
+        long ? el('button', { class: 'linkish bf-more', onclick: e => { body.classList.toggle('clip'); e.target.textContent = body.classList.contains('clip') ? 'Read all' : 'Show less'; } }, 'Read all') : null,
+        suggestionList(b),
+        el('div', { class: 'bf-actions' }, pageBtn('btn primary'),
+          el('button', { class: 'btn', onclick: () => setRead(true) }, 'Done reading'),
+          el('button', { class: 'linkish', onclick: earlier }, 'Earlier briefs')));
+    }
+    paint();
+    return box;
   }
 
   // the full brief (an HTML page in Create) opens full screen over Home and closes back to Home
@@ -94,8 +114,9 @@
     document.body.append(dlg); dlg.showModal();
   }
 
-  async function latestUnread() {
-    const rows = await q(sb.from('briefs').select('*').is('read_at', null).order('created_at', { ascending: false }).limit(1)).catch(() => []);
+  // the newest brief from the last 3 days (read or not: a read one shows folded)
+  async function latest() {
+    const rows = await q(sb.from('briefs').select('*').order('created_at', { ascending: false }).limit(1)).catch(() => []);
     const b = rows[0];
     // a brief older than 3 days is stale on Home (still under Earlier briefs)
     return b && Date.now() - new Date(b.created_at).getTime() < 3 * 864e5 ? b : null;
@@ -103,13 +124,13 @@
 
   const baseHome = DS.views.home;
   if (baseHome) DS.views.home = async () => {
-    const [node, b] = await Promise.all([baseHome(), latestUnread()]);
+    const [node, b] = await Promise.all([baseHome(), latest()]);
     if (!b) return node;
-    const c = card(b, () => c.remove());
+    const c = card(b);
     const col = node.querySelector('.hm-cols');
     if (col) col.before(c); else node.append(c);
     return node;
   };
 
-  DS.briefs = { md, card, earlier, latestUnread };
+  DS.briefs = { md, card, earlier, latest };
 })();

@@ -204,3 +204,12 @@ dialog.cal-dlg .dlg p{margin:0}
 .bf-old { border-top: 1px solid var(--line, #e5e7eb); padding: 10px 0; }
 .bf-old summary { cursor: pointer; }
 .bf-old .bf-body { margin-top: 8px; }
+/* a brief you've read: one line on Home */
+.bf-card.min{padding:10px 14px 10px 16px}
+.bf-mini{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.bf-minit{display:flex;align-items:baseline;gap:10px;min-width:0;flex:1 1 260px;contain:inline-size}
+.bf-minit .bf-kind{flex:none}
+.bf-card.min{min-width:0}
+@media (max-width:700px){.bf-minit{flex-basis:100%}}
+.bf-minit b{font:700 15px var(--ui);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.bf-miniacts{display:flex;align-items:center;gap:10px;flex:none}
