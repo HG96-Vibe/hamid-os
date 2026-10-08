@@ -637,11 +637,11 @@
       const total = list.length, more = opts.max && total > opts.max ? opts.go : null;
       if (opts.max) list = list.slice(0, opts.max);
       const row = list.length ? el('div', { class: 'ls-grid' }, list.map(tile)) : null;
-      const arrow = (dir, label) => el('button', { type: 'button', class: 'ls-arrow', 'aria-label': label, title: label, hidden: list.length <= 4,
+      const arrow = (dir, label) => el('button', { type: 'button', class: 'ls-arrow', 'aria-label': label, title: label, hidden: true,
         onclick: () => row.scrollBy({ left: dir * row.clientWidth, behavior: 'smooth' }) }, dir < 0 ? '‹' : '›');
       const prev = arrow(-1, 'Scroll left'), next = arrow(1, 'Scroll right');
       if (row) {
-        const edge = () => { prev.disabled = row.scrollLeft < 10; next.disabled = row.scrollLeft + row.clientWidth > row.scrollWidth - 10; };
+        const edge = () => { const over = row.scrollWidth > row.clientWidth + 2; prev.hidden = next.hidden = !over; prev.disabled = row.scrollLeft < 10; next.disabled = row.scrollLeft + row.clientWidth > row.scrollWidth - 10; };
         row.addEventListener('scroll', edge, { passive: true });
         if (window.ResizeObserver) new ResizeObserver(edge).observe(row); else setTimeout(edge, 100); // once it is on screen, and on resize
       }

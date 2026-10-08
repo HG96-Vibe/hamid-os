@@ -180,3 +180,17 @@ html.light .ls-ic:hover{background:rgba(30,27,75,.07)}
 html.light .ls-ic.foc{color:#d97706}
 /* light mode: the chosen filter chip stays filled (the white chip background was hiding its white text) */
 html.light .ls-chip.on{background:#4f46e5;border-color:#4f46e5;color:#fff}
+
+/* Smaller cards: eight to a row on a wide screen (half the size they were); the title and buttons scale down with them */
+.ls-grid{grid-auto-columns:calc((100% - 84px) / 8);gap:12px}
+.ls-thumb{border-radius:12px}
+.ls-tbody{padding:7px 2px 2px;gap:2px}
+.ls-tbody h3{font-size:12.5px}
+.ls-tbody p{font-size:11px}
+.ls-badge{bottom:5px;right:5px;padding:1px 5px;font-size:10px}
+.ls-badge:first-of-type:not(:last-child){left:5px}
+.ls-ic{width:24px;height:24px}
+.ls-ic svg{width:14px;height:14px}
+.ls-playover svg{width:26px;height:26px}
+@media (max-width:1200px){.ls-grid{grid-auto-columns:calc((100% - 60px) / 6)}}
+@media (max-width:900px){.ls-grid{grid-auto-columns:36%}}
