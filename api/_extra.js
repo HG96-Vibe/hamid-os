@@ -19,6 +19,13 @@ module.exports = h => {
     if (!p) throw new UserError(`Nothing called "${name}". Projects: ${ps.map(x => x.name).join(', ')}.`);
     return p;
   };
+  const findMap = async (c, which) => {
+    const w = String(which || '').trim(); if (!w) throw new UserError('Say which map (its id or title; list_maps shows them).');
+    const maps = await c.db.get('maps?select=id,title&limit=500'), n = w.toLowerCase();
+    const m = maps.find(x => x.id === w) || maps.find(x => x.title.toLowerCase() === n) || maps.find(x => x.title.toLowerCase().includes(n));
+    if (!m) throw new UserError(`No map "${which}". Maps: ${maps.map(x => x.title).join(', ') || 'none yet'}.`);
+    return m;
+  };
   const findPerson = async (c, who) => {
     const w = String(who || '').trim();
     if (!w) throw new UserError('Say who (a name or id from list_people).');
@@ -143,6 +150,57 @@ module.exports = h => {
         for (const t of tasks) items.push({ date: t.period_start, what: `${t.repeat_id ? 'Repeating task' : 'Task'}: ${t.title}` });
         items.sort((x, y) => (x.date < y.date ? -1 : x.date > y.date ? 1 : 0));
         return { today: t0, through: to, agenda: items };
+      } },
+
+    /* ===================== Maps (break-downs) ===================== */
+    { name: 'list_maps', title: 'Maps', ro: true,
+      description: "Hamid's maps: things he's breaking down top-down (a goal or project at the top, smaller pieces below). Gives each map's id, title, number of boxes and how many of the smallest pieces are done.",
+      inputSchema: S({}),
+      async run(a, c) {
+        const [maps, nodes] = await Promise.all([c.db.get('maps?select=id,title,updated_at&order=updated_at.desc&limit=200'), c.db.get('map_nodes?select=id,map_id,parent_id,done_at&limit=20000')]);
+        return { maps: maps.map(m => { const ns = nodes.filter(n => n.map_id === m.id), par = new Set(ns.map(n => n.parent_id)), leaves = ns.filter(n => n.parent_id && !par.has(n.id));
+          return { id: m.id, title: m.title, boxes: ns.length, done: `${leaves.filter(n => n.done_at).length} of ${leaves.length}`, edited: m.updated_at.slice(0, 10) }; }) };
+      } },
+    { name: 'read_map', title: 'Read a map', ro: true,
+      description: 'A map as an indented outline, with each box\'s id (to add pieces under it), done/date/note, and whether it is a suggestion still waiting for Hamid to keep or remove.',
+      inputSchema: S({ map: str('Map id or title') }, ['map']),
+      async run(a, c) {
+        const m = await findMap(c, a.map);
+        const nodes = await c.db.get(`map_nodes?select=id,parent_id,title,note,due_on,done_at,suggested,position&map_id=eq.${m.id}&limit=5000`);
+        const kids = id => nodes.filter(n => n.parent_id === id).sort((x, y) => x.position - y.position);
+        const lines = [];
+        const walk = (n, d) => { lines.push(`${'  '.repeat(d)}- ${n.title}${n.done_at ? ' [done]' : ''}${n.due_on ? ` [by ${n.due_on}]` : ''}${n.suggested ? ' [suggested]' : ''}${n.note ? ` (note: ${n.note})` : ''}  {id: ${n.id}}`); kids(n.id).forEach(k => walk(k, d + 1)); };
+        nodes.filter(n => !n.parent_id).forEach(r => walk(r, 0));
+        return { map: { id: m.id, title: m.title }, outline: lines.join('\n') };
+      } },
+    { name: 'suggest_map_pieces', title: 'Suggest pieces for a map',
+      description: "Add suggested pieces under a box on one of Hamid's maps (default: under the top). They show dashed on the map with Keep / Remove, so nothing is final until he keeps them. Items can nest: [{title, children:[{title}]}]. Only use this when he asks you to break something down on his map.",
+      inputSchema: S({ map: str('Map id or title'), under: str('The box to add under: its id (from read_map) or its exact text. Default: the top of the map'),
+        items: { type: 'array', description: 'The pieces, each {title, children?, due_on?}', items: { type: 'object', properties: { title: str('Piece'), due_on: DATE('Optional date'), children: { type: 'array', items: { type: 'object' } } }, required: ['title'] } } }, ['map', 'items']),
+      async run(a, c) {
+        const m = await findMap(c, a.map);
+        const nodes = await c.db.get(`map_nodes?select=id,parent_id,title,position&map_id=eq.${m.id}&limit=5000`);
+        let parent = nodes.find(n => !n.parent_id);
+        if (a.under) {
+          const u = String(a.under).trim(), low = u.toLowerCase();
+          parent = nodes.find(n => n.id === u) || nodes.find(n => n.title.toLowerCase() === low) || nodes.find(n => n.title.toLowerCase().includes(low));
+          if (!parent) throw new UserError(`No box "${a.under}" on that map. Use read_map for the ids.`);
+        }
+        let added = 0; const out = [];
+        const put = async (items, pid, base, depth) => {
+          if (depth > 6) return;
+          let pos = base;
+          for (const it of (Array.isArray(items) ? items : []).slice(0, 30)) {
+            const title = text(it && it.title, 300); if (!title || added >= 120) continue;
+            const [r] = await c.db.insert('map_nodes', { user_id: c.uid, map_id: m.id, parent_id: pid, title, due_on: isoDate(it.due_on, 'due_on') || null, suggested: true, position: ++pos });
+            added++; out.push(title);
+            if (it.children) await put(it.children, r.id, 0, depth + 1);
+          }
+        };
+        const sib = nodes.filter(n => n.parent_id === parent.id);
+        await put(need(a.items, 'items'), parent.id, sib.length ? Math.max(...sib.map(n => n.position)) : 0, 0);
+        await c.db.update(`maps?id=eq.${m.id}`, { updated_at: new Date().toISOString() });
+        return { added, under: parent.title, pieces: out, note: 'They show dashed on the map for Hamid to keep or remove.' };
       } },
 
     /* ===================== WHOOP ===================== */

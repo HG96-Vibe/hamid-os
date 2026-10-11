@@ -1068,7 +1068,7 @@ function download(name, text, type) {
 }
 async function exportJson() {
   const out = { app: 'Daily Sheet', exported_at: new Date().toISOString() };
-  for (const t of ['tasks', 'task_notes', 'task_links', 'reviews', 'wins', 'focus_sessions', 'inbox', 'settings', 'projects', 'doc_folders', 'documents', 'document_versions', 'task_repeats', 'people', 'people_notes', 'project_milestones', 'savings_goals', 'briefs', 'life_goals', 'life_goal_steps'])
+  for (const t of ['tasks', 'task_notes', 'task_links', 'reviews', 'wins', 'focus_sessions', 'inbox', 'settings', 'projects', 'doc_folders', 'documents', 'document_versions', 'task_repeats', 'people', 'people_notes', 'project_milestones', 'savings_goals', 'briefs', 'life_goals', 'life_goal_steps', 'maps', 'map_nodes'])
     out[t] = await fetchAll(() => sb.from(t).select('*').order(t === 'settings' ? 'user_id' : 'id'));
   download(`daily-sheet-backup-${today()}.json`, JSON.stringify(out, null, 2), 'application/json');
   toast('Backup downloaded.');

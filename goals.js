@@ -58,13 +58,15 @@
       await q(sb.from('life_goals').update({ position: g.position }).eq('id', other.id));
       refresh();
     };
-    menu.append(
+    menu.append(...[
       item('Edit', () => editGoal(g)),
+      DS.maps ? item('Map this goal', () => DS.maps.fromGoal(g, mine)) : null,
       !g.achieved_at && i > 0 ? item('Move up', () => swap(-1)) : null,
       !g.achieved_at && i < list.length - 1 ? item('Move down', () => swap(1)) : null,
       g.achieved_at ? item('Not achieved yet', async () => { await q(sb.from('life_goals').update({ achieved_at: null }).eq('id', g.id)); refresh(); })
         : item('Mark as achieved 🎉', async () => { await q(sb.from('life_goals').update({ achieved_at: new Date().toISOString() }).eq('id', g.id)); toast('Goal achieved. Well done.'); refresh(); }),
-      item('Delete', async () => { if (!confirm(`Delete “${g.title}” and its timeline?`)) return; await q(sb.from('life_goals').delete().eq('id', g.id)); toast('Deleted.'); refresh(); }));
+      item('Delete', async () => { if (!confirm(`Delete “${g.title}” and its timeline?`)) return; await q(sb.from('life_goals').delete().eq('id', g.id)); toast('Deleted.'); refresh(); })].filter(Boolean));
+
     const more = el('button', { type: 'button', class: 'gl-more', 'aria-label': `More for ${g.title}`, 'aria-haspopup': 'menu', onclick: () => {
       menu.hidden = !menu.hidden; if (!menu.hidden) { document.addEventListener('pointerdown', outside, true); menu.querySelector('button').focus(); }
     } }, '⋯');
