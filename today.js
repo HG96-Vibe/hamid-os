@@ -133,11 +133,26 @@
         el('button', { class: 'mr-save', onclick: () => openCloseout(d, openTasks, rv) }, rv?.closed_at ? 'Edit day review' : 'Close out the day')));
 
     /* side tiles */
-    const mini = (items, title, view, empty) => el('section', { class: 'td-tile' },
-      el('div', { class: 'td-tile-h' }, el('h2', {}, title), el('button', { class: 'td-open', onclick: () => DS.go(view) }, 'Open \u2192')),
-      items.length ? el('ul', { class: 'td-mini' }, items.map(t => el('li', { class: t.status === 'done' ? 'done' : '' },
-        el('input', { type: 'checkbox', checked: t.status === 'done', 'aria-label': t.title, onchange: () => toggle(t) }),
-        el('button', { class: 'td-mini-t', onclick: () => DS.openItem(t.id) }, t.title)))) : el('p', { class: 'td-none' }, empty));
+    // This week / This month: a fold button beside Open → lifts the list up out of the way (remembered on this device)
+    const folded = v => { try { return localStorage.getItem('td_fold_' + v) === '1'; } catch (e) { return false; } };
+    const mini = (items, title, view, empty) => {
+      const isFolded = folded(view), doneN = items.filter(t => t.status === 'done').length;
+      const count = el('span', { class: 'td-foldn' }, items.length ? `${doneN}/${items.length}` : '');
+      const body = el('div', { class: 'td-foldbody' }, el('div', {},
+        items.length ? el('ul', { class: 'td-mini' }, items.map(t => el('li', { class: t.status === 'done' ? 'done' : '' },
+          el('input', { type: 'checkbox', checked: t.status === 'done', 'aria-label': t.title, onchange: () => toggle(t) }),
+          el('button', { class: 'td-mini-t', onclick: () => DS.openItem(t.id) }, t.title)))) : el('p', { class: 'td-none' }, empty)));
+      const tile = el('section', { class: 'td-tile td-foldable' + (isFolded ? ' folded' : '') });
+      const btn = el('button', { type: 'button', class: 'td-fold', 'aria-expanded': String(!isFolded), 'aria-label': (isFolded ? 'Show ' : 'Hide ') + title.toLowerCase(), title: isFolded ? 'Show the list' : 'Hide the list',
+        onclick: () => {
+          const now = !tile.classList.contains('folded');
+          tile.classList.toggle('folded', now);
+          btn.setAttribute('aria-expanded', String(!now)); btn.title = now ? 'Show the list' : 'Hide the list'; btn.setAttribute('aria-label', (now ? 'Show ' : 'Hide ') + title.toLowerCase());
+          try { localStorage.setItem('td_fold_' + view, now ? '1' : '0'); } catch (e) {}
+        } }, Object.assign(el('span', { 'aria-hidden': 'true' }), { innerHTML: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>' }));
+      tile.append(el('div', { class: 'td-tile-h' }, el('h2', {}, title), count, el('span', { class: 'td-hacts' }, el('button', { class: 'td-open', onclick: () => DS.go(view) }, 'Open \u2192'), btn)), body);
+      return tile;
+    };
     const winIn = el('input', { class: 'td-field', placeholder: 'Log a win and press Enter', maxlength: '1000', 'aria-label': 'Log a win',
       onkeydown: async e => {
         if (e.key !== 'Enter' || !winIn.value.trim()) return;

@@ -147,3 +147,18 @@ html.light .sch-today h3{color:#b45309}
 .sch-un{border:0;background:#fef2f2;color:#b91c1c;border-radius:10px;padding:8px;font:700 12.5px/1 var(--ui);cursor:pointer}
 .sch-un:hover{background:#fee2e2}
 .sch-today li .sch-wrap{margin-left:auto}
+
+/* This week / This month: fold the list up */
+.td-foldable .td-tile-h{align-items:center;justify-content:flex-start}
+.td-hacts{display:inline-flex;align-items:center;gap:6px;margin-left:auto}
+.td-foldn{font:700 12px var(--ui);color:#7a7ea3;margin-left:8px;opacity:0;transition:opacity .2s}
+.td-foldable.folded .td-foldn{opacity:1}
+.td-fold{width:28px;height:28px;border-radius:50%;border:1px solid #d9d9e6;background:#fff;color:#4a4e78;display:grid;place-items:center;padding:0;cursor:pointer}
+.td-fold:hover{border-color:var(--amber);color:#1e1b4b}
+.td-fold svg{transition:transform .25s ease}
+.td-foldable.folded .td-fold svg{transform:rotate(180deg)}
+.td-foldbody{display:grid;grid-template-rows:1fr;max-height:1400px;transition:grid-template-rows .3s ease,max-height .3s ease,opacity .25s ease,margin .3s ease}
+.td-foldbody>div{overflow:hidden;min-height:0}
+.td-foldable.folded .td-foldbody{grid-template-rows:0fr;opacity:0;margin-top:-10px;min-height:0;max-height:0;overflow:hidden}
+.td-foldable.folded .td-tile-h{margin-bottom:0}
+@media (prefers-reduced-motion:reduce){.td-foldbody,.td-fold svg{transition:none}}
