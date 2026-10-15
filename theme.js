@@ -13,7 +13,13 @@
   fx.setAttribute('aria-hidden', 'true');
   var bgc = canvas.getContext('2d'), c = fx.getContext('2d');
   if (c && bgc) {
-    var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    // Themes (themes.js): html.scene means another theme draws its own background, so the Chip stays empty;
+    // data-motion "off" holds it still and "calm" slows it down.
+    var root = document.documentElement, mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    var off = function () { return root.classList.contains('scene'); };
+    var reduced = false, calm = false;
+    var motion = function () { var m = root.getAttribute('data-motion'); reduced = mq.matches || m === 'off'; calm = m === 'calm'; };
+    motion();
     var W = 0, H = 0, dpr = 1, px = 0, py = 0, target = 0, near = 0, running = false, last = 0, t0 = 0, lastSpawn = 0;
     var INK = '165,180,252', GLOW = '251,191,36', K = 1, CHIP_FILL = 'rgba(30,27,75,.85)';
     var chip = null, traces = [], sigs = [];
@@ -58,6 +64,7 @@
     var dot = document.createElement('canvas'), DOT_R = 1.8, DOT_S = 0;
     var paintStatic = function () {
       lc.setTransform(dpr, 0, 0, dpr, 0, 0); lc.clearRect(0, 0, W, H);
+      if (off()) return;
       lc.lineWidth = 1.2; lc.lineJoin = 'round'; lc.strokeStyle = rgba(INK, .12 * K);
       for (var i = 0; i < traces.length; i++) { var tr = traces[i].pts; lc.beginPath(); lc.moveTo(tr[0], tr[1]); for (var j = 2; j < tr.length; j += 2) lc.lineTo(tr[j], tr[j + 1]); lc.stroke(); }
       DOT_S = Math.ceil(DOT_R * 5 * 2 * dpr) + 2;
@@ -79,8 +86,8 @@
       for (var k = 0; k < dirty.length; k++) c.clearRect(dirty[k][0] - 1, dirty[k][1] - 1, dirty[k][2] + 2, dirty[k][3] + 2);
       dirty = [];
       var s = t / 1000, i;
-      if (!reduced && t - lastSpawn > 900 && sigs.length < 8) { lastSpawn = t; sigs.push({ tr: traces[Math.floor(Math.random() * traces.length)], d: 0, inward: Math.random() < .3 }); }
-      var v = reduced ? 0 : .055 * dt, keep = [];
+      if (!reduced && t - lastSpawn > (calm ? 2200 : 900) && sigs.length < (calm ? 4 : 8)) { lastSpawn = t; sigs.push({ tr: traces[Math.floor(Math.random() * traces.length)], d: 0, inward: Math.random() < .3 }); }
+      var v = reduced ? 0 : .055 * dt * (calm ? .45 : 1), keep = [];
       for (i = 0; i < sigs.length; i++) {
         var sg = sigs[i], view = Math.min(sg.tr.len, Math.max(W, H) * .9);
         sg.d += v;
@@ -104,7 +111,7 @@
       c.fillStyle = rgba(GLOW, (.5 + lit * .5) * K); c.beginPath(); c.arc(chip.x + 22, chip.y + 22, 2.5, 0, 6.2832); c.fill();
     };
     var frame = function (now) {
-      if (document.hidden) { running = false; return; }
+      if (document.hidden || off() || reduced) { running = false; return; }
       if (now - last < 32) { requestAnimationFrame(frame); return; } // about 30 frames a second
       var dt = Math.min(66, now - last); last = now;
       near += (target - near) * .15;
@@ -112,23 +119,24 @@
       requestAnimationFrame(frame);
     };
     var start = function () {
+      if (off()) { c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, W, H); dirty = []; return; }
       if (reduced) { draw(0, 16); return; }
       if (!running) { running = true; last = performance.now(); if (!t0) t0 = last; requestAnimationFrame(frame); }
     };
-    window.addEventListener('resize', function () { resize(); if (reduced) draw(0, 16); });
-    window.addEventListener('ds-theme', function () { colours(); paintStatic(); if (reduced) draw(0, 16); });
+    window.addEventListener('resize', function () { resize(); if (reduced && !off()) draw(0, 16); });
+    window.addEventListener('ds-theme', function () { colours(); motion(); paintStatic(); start(); });
     document.addEventListener('visibilitychange', function () { if (!document.hidden) start(); });
     // Clicking the chip (on empty background, not on a card or button) fires two signals outwards.
     var CONTENT = 'button,a,input,textarea,select,label,dialog,section,article,header,nav,.card,.sheet,.outcome,.td-row,.td-tile,.mr-box,.hm-hero,.pf,.bar,.dock,.drawer-wrap,.timerbar,.toast';
     var onChip = function (e) {
-      if (!chip || (e.target && e.target.closest && e.target.closest(CONTENT))) return false;
+      if (!chip || off() || (e.target && e.target.closest && e.target.closest(CONTENT))) return false;
       return e.clientX >= chip.x && e.clientX <= chip.x + chip.s && e.clientY >= chip.y && e.clientY <= chip.y + chip.s;
     };
     var fire = function () {
       var picks = traces.slice().sort(function () { return Math.random() - .5; }).slice(0, 2);
       for (var i = 0; i < picks.length; i++) sigs.push({ tr: picks[i], d: 0, inward: false });
       chip.glow = 1;
-      if (reduced) draw(0, 16);
+      if (reduced) draw(0, 16); else start();
     };
     window.addEventListener('click', function (e) { if (onChip(e)) fire(); });
     var hovering = false;
