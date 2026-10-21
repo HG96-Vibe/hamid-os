@@ -638,10 +638,10 @@
   // happens meanwhile, and the rest of the page (money out, budgets, payments) updates once it's done.
   const busy = new Set();
   const wait = ms => new Promise(r => setTimeout(r, ms));
-  async function togglePaid(p, rowEl) {
+  async function togglePaid(p, rowEl, due) {
     if (busy.has(p.id)) return;
     busy.add(p.id);
-    const d = cycleOf(p), key = ddKey(p, d), had = M.ddPaid.get(key), nowPaid = !had;
+    const d = due || cycleOf(p), key = ddKey(p, d), had = M.ddPaid.get(key), nowPaid = !had;
     const card = rowEl && rowEl.closest('.mn-planned');
     if (rowEl) paintRow(rowEl, p, d, nowPaid);
     const save = (async () => {
@@ -706,8 +706,65 @@
     if (days === 1) return 'Tomorrow';
     return fmt(d, { weekday: 'short', day: 'numeric', month: 'short' }) + (days <= 14 ? ` · in ${days} days` : '');
   }
+  // Another month (the ‹ › under the list): every time each one goes out that month. Going back, payments before you
+  // added it aren't counted unless you ticked them; going forward it simply carries on from its date.
+  function datesIn(p, ms) {
+    const end = monthEnd(ms), made = (p.created_at || '').slice(0, 10), out = [];
+    const keep = (d, k) => d >= ms && d <= end && (k >= 0 || d >= made || isPaid(p, d));
+    if (p.cadence === 'once') return keep(p.next_on, 0) ? [p.next_on] : [];
+    let k = 0;
+    while (nth(p, k) > end && k > -3000) k--;
+    while (nth(p, k - 1) >= ms && k > -3000) k--;
+    for (let d = nth(p, k); d <= end && k < 3000; d = nth(p, ++k)) if (keep(d, k)) out.push(d);
+    return out;
+  }
+  const ddNow = () => monthStart(today());
+  const ddMonth = () => M.ddMonth || ddNow();
+  function ddMonthRows(ms) {
+    return (M.planned || []).map(p => ({ p, dates: datesIn(p, ms) })).filter(x => x.dates.length)
+      .sort((a, b) => (a.dates[0] < b.dates[0] ? -1 : a.dates[0] > b.dates[0] ? 1 : 0));
+  }
+  function ddSwitch() {
+    const ms = ddMonth(), now = ddNow(), go = m => { M.ddMonth = m === now ? null : m; draw(); };
+    const min = addMonths(now, -24), max = addMonths(now, 24);
+    return el('div', { class: 'mn-pmonth', role: 'group', 'aria-label': 'Which month to show' },
+      el('button', { type: 'button', class: 'arrow', id: 'mn-pprev', 'aria-label': 'Previous month', disabled: ms <= min, onclick: () => go(addMonths(ms, -1)) }, '‹'),
+      el('b', { 'aria-live': 'polite' }, monthName(ms)),
+      el('button', { type: 'button', class: 'arrow', id: 'mn-pnext', 'aria-label': 'Next month', disabled: ms >= max, onclick: () => go(addMonths(ms, 1)) }, '›'),
+      ms !== now ? el('button', { type: 'button', class: 'linkish mn-pback', id: 'mn-pback', onclick: () => go(now) }, 'Back to this month') : null);
+  }
+  // one line per direct debit that goes out in that month (past months: ticked or not; later months: what's coming)
+  function otherMonthBody(ms) {
+    const rows = ddMonthRows(ms), past = ms < ddNow(), t0 = today();
+    const total = rows.reduce((a, r) => a + r.dates.length * r.p.amount_pence, 0);
+    const paidSum = rows.reduce((a, r) => a + r.dates.filter(d => isPaid(r.p, d)).length * r.p.amount_pence, 0);
+    const skipped = (M.planned || []).length - rows.length, mon = monthName(ms).split(' ')[0];
+    const days = ds => ds.length === 1 ? fmt(ds[0], { weekday: 'short', day: 'numeric', month: 'short' })
+      : ds.map(d => +d.slice(8, 10)).join(', ') + ' ' + fmt(ds[0], { month: 'short' });
+    const line = ({ p, dates }) => {
+      const paid = dates.every(d => isPaid(p, d)), some = dates.some(d => isPaid(p, d));
+      const one = dates.length === 1, tickable = one && dates[0] <= t0;
+      const state = paid ? 'Paid' : past ? (some ? 'Partly ticked' : 'Not ticked') : '';
+      return el('div', { class: 'mn-prow' + (paid ? ' paid' : '') + (past && !paid ? ' late' : '') + (past ? '' : ' ahead'), 'data-pid': p.id },
+        el('button', { type: 'button', class: 'mn-ptick', 'aria-pressed': String(paid), disabled: !tickable,
+          title: tickable ? (paid ? 'Paid. Click to untick' : 'Tick if it was paid') : past ? 'Goes out more than once this month' : 'Still to come',
+          'aria-label': paid ? `${p.name} was paid. Untick` : `Mark ${p.name} as paid for ${monthName(ms)}`,
+          onclick: tickable ? () => togglePaid(p, null, dates[0]) : null }, paid ? '✓' : ''),
+        el('button', { type: 'button', class: 'mn-pn', title: 'Edit', onclick: () => plannedDialog(p) }, el('b', {}, p.name), p.note ? el('small', {}, p.note) : null),
+        el('span', { class: 'mn-pwhen' }, el('span', { class: 'mn-kind' }, CADENCE[p.cadence] + (dates.length > 1 ? ` ×${dates.length}` : '')),
+          el('small', {}, (state ? state + ' · ' : '') + days(dates))),
+        amt(dates.length * p.amount_pence, {}, 'mn-pamt'),
+        el('span', { class: 'mn-pgap', 'aria-hidden': 'true' }));
+    };
+    return [
+      el('p', { class: 'mn-total' }, rows.length
+        ? (past ? [amt(total), ` went out in ${mon}`, paidSum < total ? [' · ', amt(paidSum), ' ticked as paid'] : ''] : [amt(total), ` will go out in ${mon}`])
+        : `Nothing ${past ? 'went' : 'goes'} out in ${mon}.`),
+      rows.length ? el('div', { class: 'mn-plist mn-cap', 'data-cap': 'dd-' + ms, 'data-items': '.mn-prow' }, rows.map(line)) : null,
+      skipped > 0 && rows.length ? el('p', { class: 'mn-pskip' }, `${skipped} other${skipped === 1 ? '' : 's'} ${past ? 'didn’t go' : 'don’t go'} out in ${mon}.`) : null];
+  }
   function plannedCard() {
-    const list = plannedOrder();
+    const list = plannedOrder(), other = ddMonth() !== ddNow();
     const monthly = M.planned.reduce((a, p) => a + p.amount_pence * PER_MONTH[p.cadence], 0);
     const left = M.planned.reduce((a, p) => a + leftThisMonth(p), 0);
     const name = el('input', { class: 'field', id: 'mn-pname', maxlength: '80', placeholder: 'e.g. Council tax, Gym, Phone', 'aria-label': 'Name' });
@@ -730,6 +787,7 @@
         M.planned.length ? el('span', { class: 'mn-psum' }, amt(Math.round(monthly), { whole: true }), ' a month') : null,
         el('button', { type: 'button', class: 'linkish mn-findsubs', onclick: subsDialog, title: 'Look through your payments for things that repeat' }, 'Find subscriptions')),
       el('p', { class: 'mn-pnote' }, 'Tick one when it’s been paid and it’s added to money out.'),
+      ...(other && M.planned.length ? otherMonthBody(ddMonth()) : [
       M.planned.length ? el('p', { class: 'mn-total' }, left ? [amt(left), ' still to go out this month'] : 'Nothing more to go out this month.') : null,
       list.length ? el('div', { class: 'mn-plist mn-cap', 'data-cap': 'dd', 'data-items': '.mn-prow' }, list.map(({ p, due, paid }) => el('div', { class: 'mn-prow' + (paid ? ' paid' : due < today() ? ' late' : ''), 'data-pid': p.id },
         el('button', { type: 'button', class: 'mn-ptick', id: 'mn-tick-' + p.id, 'aria-pressed': String(paid), title: paid ? 'Paid. Click to untick' : 'Tick when it’s been paid',
@@ -739,7 +797,8 @@
           el('small', {}, whenText(p, due, paid))),
         amt(p.amount_pence, {}, 'mn-pamt'),
         el('button', { type: 'button', class: 'mn-del', title: 'Delete', 'aria-label': `Delete ${p.name} from direct debits`, onclick: () => removePlanned(p) }, icon('trash', 15))))) :
-        el('p', { class: 'mn-empty' }, 'Note down your direct debits, standing orders and bills, with how much and when they go out.'),
+        el('p', { class: 'mn-empty' }, 'Note down your direct debits, standing orders and bills, with how much and when they go out.')]),
+      M.planned.length ? ddSwitch() : null,
       el('form', { class: 'mn-padd', onsubmit: add }, name, amount, cad, date, note, el('button', { type: 'submit', class: 'btn primary' }, icon('plus', 14), ' Add')));
   }
   function plannedDialog(p) {
