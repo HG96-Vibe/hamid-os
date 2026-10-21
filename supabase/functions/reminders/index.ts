@@ -158,9 +158,10 @@ function plusMonths(d: string, n: number) {
   const yy = y + Math.floor(m / 12), mm = ((m % 12) + 12) % 12, last = new Date(Date.UTC(yy, mm + 1, 0)).getUTCDate();
   return `${yy}-${String(mm + 1).padStart(2, '0')}-${String(Math.min(day, last)).padStart(2, '0')}`;
 }
-type Planned = { id: string; name: string; amount_pence: number; cadence: string; next_on: string };
+type Planned = { id: string; name: string; amount_pence: number; cadence: string; next_on: string; ends_on?: string | null };
 const nthDue = (p: Planned, k: number) => p.cadence === 'weekly' ? addD(p.next_on, 7 * k) : plusMonths(p.next_on, k * (({ monthly: 1, quarterly: 3, yearly: 12 } as Record<string, number>)[p.cadence] || 0));
 function dueOn(p: Planned, d: string) {
+  if (p.ends_on && d > p.ends_on) return false; // stopped: nothing after its last payment
   if (p.cadence === 'once') return p.next_on === d;
   for (let k = 0, x = nthDue(p, 0); x <= d && k < 3000; x = nthDue(p, ++k)) if (x === d) return true;
   return false;
@@ -173,7 +174,7 @@ async function alerts(s: Record<string, any>, L: { date: string; mins: number },
   if (L.mins >= 18 * 60 && L.mins < 22 * 60) {
     const { data: pers } = await sb.from('projects').select('id').eq('user_id', uid).eq('kind', 'personal').is('parent_id', null).limit(1);
     if (pers && pers[0]) {
-      const { data: planned } = await sb.from('money_planned').select('id,name,amount_pence,cadence,next_on').eq('user_id', uid).eq('book_id', pers[0].id);
+      const { data: planned } = await sb.from('money_planned').select('id,name,amount_pence,cadence,next_on,ends_on').eq('user_id', uid).eq('book_id', pers[0].id);
       const dd = ((planned || []) as Planned[]).filter(p => dueOn(p, tom));
       if (dd.length) await send(`dd:${tom}`, { title: dd.length === 1 ? `${dd[0].name} goes out tomorrow` : `${dd.length} direct debits go out tomorrow`,
         body: dd.map(p => `${p.name} ${gbp(p.amount_pence)}`).join(' · ') + (dd.length > 1 ? ` (${gbp(dd.reduce((a, p) => a + p.amount_pence, 0))} in all)` : ''), url: '/#capital', tag: 'dd-' + tom });

@@ -47,7 +47,7 @@ async function loadData(userId: string, start: string, end: string) {
     all(sb.from('projects').select('id,name,kind,status,position').eq('user_id', userId).is('parent_id', null).eq('status', 'active').order('position')),
     all(sb.from('money_categories').select('book_id,name,kind,budget_pence').eq('user_id', userId)),
     all(sb.from('money_tx').select('book_id,occurred_on,amount_pence,description,category,note,source,import_key').eq('user_id', userId).gte('occurred_on', prevMonthStart(start)).lte('occurred_on', end).limit(50000)),
-    all(sb.from('money_planned').select('id,book_id,name,amount_pence,cadence,next_on').eq('user_id', userId)),
+    all(sb.from('money_planned').select('id,book_id,name,amount_pence,cadence,next_on,ends_on').eq('user_id', userId)),
     all(sb.from('money_debts').select('id,book_id,direction,name,amount_pence,due_on').eq('user_id', userId)),
     all(sb.from('money_debt_payments').select('debt_id,paid_on,amount_pence').eq('user_id', userId)),
     all(sb.from('money_holdings').select('id,name,archived').eq('user_id', userId)),

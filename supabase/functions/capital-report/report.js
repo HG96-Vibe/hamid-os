@@ -38,7 +38,7 @@
   function datesIn(p, from, to) {
     if (p.cadence === 'once') return p.next_on >= from && p.next_on <= to ? [p.next_on] : [];
     const out = [];
-    for (let k = 0, d = nth(p, 0); d <= to && k < 3000; d = nth(p, ++k)) if (d >= from) out.push(d);
+    for (let k = 0, d = nth(p, 0); d <= to && k < 3000; d = nth(p, ++k)) if (d >= from && (!p.ends_on || d <= p.ends_on)) out.push(d);
     return out;
   }
 

@@ -129,7 +129,7 @@ module.exports = h => {
         const t0 = await c.today(), n = Math.min(60, Math.max(1, Math.round(+a.days || 7))), to = L.addDays(t0, n - 1);
         const book = await c.book();
         const [planned, paidRows, debts, goals, ms, people, sched, tasks, projects] = await Promise.all([
-          c.db.get(`money_planned?select=id,name,amount_pence,cadence,next_on&book_id=eq.${book.id}`),
+          c.db.get(`money_planned?select=id,name,amount_pence,cadence,next_on,ends_on&book_id=eq.${book.id}`),
           c.db.get(`money_tx?select=import_key&book_id=eq.${book.id}&import_key=like.dd%7C*&occurred_on=gte.${L.addDays(t0, -40)}&limit=5000`).catch(() => []),
           c.db.get(`money_debts?select=name,direction,amount_pence,due_on&due_on=gte.${t0}&due_on=lte.${to}`),
           c.db.get(`savings_goals?select=name,target_pence,due_on&archived=eq.false&due_on=gte.${t0}&due_on=lte.${to}`),

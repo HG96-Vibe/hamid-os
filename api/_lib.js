@@ -134,13 +134,13 @@ const nth = (p, k) => p.cadence === 'weekly' ? addDays(p.next_on, 7 * k) : plusM
 // the payment a tick is for: the latest one on or before today, or the first one if none has come yet
 function cycleOf(p, t0) {
   if (p.cadence === 'once' || nth(p, 0) > t0) return p.next_on;
-  let k = 0; while (nth(p, k + 1) <= t0 && k < 3000) k++;
+  let k = 0; while (nth(p, k + 1) <= t0 && (!p.ends_on || nth(p, k + 1) <= p.ends_on) && k < 3000) k++;
   return nth(p, k);
 }
-function afterCycle(p, t0) { if (p.cadence === 'once') return null; const c = cycleOf(p, t0); let k = 0; while (nth(p, k) <= c && k < 3000) k++; return nth(p, k); }
+function afterCycle(p, t0) { if (p.cadence === 'once') return null; const c = cycleOf(p, t0); let k = 0; while (nth(p, k) <= c && k < 3000) k++; return p.ends_on && nth(p, k) > p.ends_on ? null : nth(p, k); }
 function datesIn(p, from, to) {
   if (p.cadence === 'once') return p.next_on >= from && p.next_on <= to ? [p.next_on] : [];
-  const out = []; for (let k = 0, d = nth(p, 0); d <= to && k < 3000; d = nth(p, ++k)) if (d >= from) out.push(d);
+  const out = []; for (let k = 0, d = nth(p, 0); d <= to && k < 3000; d = nth(p, ++k)) if (d >= from && (!p.ends_on || d <= p.ends_on)) out.push(d);
   return out;
 }
 const ddKey = (p, d) => `dd|${p.id}|${d}`;

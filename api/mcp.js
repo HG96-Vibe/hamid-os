@@ -68,7 +68,8 @@ async function pickCategory(c, book, kind, given, desc) {
 }
 const ddOut = (p, t0, paidKeys) => {
   const due = L.cycleOf(p, t0), paid = paidKeys.has(L.ddKey(p, due));
-  return { id: p.id, name: p.name, amount: gbp(p.amount_pence), cadence: p.cadence, current_due: due, paid, next_after: L.afterCycle(p, t0), note: p.note || undefined };
+  return { id: p.id, name: p.name, amount: gbp(p.amount_pence), cadence: p.cadence, current_due: due, paid, next_after: L.afterCycle(p, t0), last_payment: p.ends_on || undefined,
+    stopped: p.ends_on && p.ends_on < t0 ? true : undefined, note: p.note || undefined };
 };
 
 /* ---------- tools ---------- */
@@ -117,7 +118,7 @@ const TOOLS = [
       const [cats, tx, planned, debts, debtPays, holdings, values] = await Promise.all([
         c.db.get('money_categories?select=book_id,name,kind,budget_pence'),
         c.db.get(`money_tx?select=book_id,occurred_on,amount_pence,description,category,import_key&occurred_on=gte.${prev}&occurred_on=lte.${end}&limit=50000`),
-        c.db.get('money_planned?select=id,book_id,name,amount_pence,cadence,next_on'),
+        c.db.get('money_planned?select=id,book_id,name,amount_pence,cadence,next_on,ends_on'),
         c.db.get('money_debts?select=id,book_id,direction,name,amount_pence,due_on'),
         c.db.get('money_debt_payments?select=debt_id,paid_on,amount_pence'),
         c.db.get('money_holdings?select=id,name,archived'),
@@ -163,7 +164,7 @@ const TOOLS = [
         income: cats.filter(x => x.kind === 'in').map(x => x.name) };
     } },
   { name: 'list_direct_debits', title: 'List direct debits', ro: true,
-    description: 'Your direct debits and bills: amount, how often, the payment currently due and whether it has been ticked as paid.',
+    description: 'Your direct debits and bills: amount, how often, the payment currently due and whether it has been ticked as paid. Ones he has stopped have a last_payment date (and stopped: true once it has passed); they are left out of the monthly figure.',
     inputSchema: S({ book: BOOK }),
     async run(a, c) {
       const b = await c.book(a.book), t0 = await c.today();
@@ -171,7 +172,7 @@ const TOOLS = [
         c.db.get(`money_tx?select=import_key&book_id=eq.${b.id}&import_key=like.dd%7C*&limit=50000`)]);
       const keys = new Set(paid.map(t => t.import_key));
       const list = planned.map(p => ddOut(p, t0, keys)).sort((x, y) => (x.current_due < y.current_due ? -1 : 1));
-      return { book: b.name, today: t0, monthly_equivalent: gbp(planned.reduce((n, p) => n + Math.round(p.amount_pence * ({ weekly: 52 / 12, monthly: 1, quarterly: 1 / 3, yearly: 1 / 12, once: 0 }[p.cadence])), 0)), direct_debits: list };
+      return { book: b.name, today: t0, monthly_equivalent: gbp(planned.filter(p => !p.ends_on || p.ends_on >= t0).reduce((n, p) => n + Math.round(p.amount_pence * ({ weekly: 52 / 12, monthly: 1, quarterly: 1 / 3, yearly: 1 / 12, once: 0 }[p.cadence])), 0)), direct_debits: list };
     } },
   { name: 'list_loans', title: 'List loans and lending', ro: true,
     description: 'Money you have borrowed (loans) and lent to others, with what has been paid back and what is left.',
@@ -275,8 +276,9 @@ const TOOLS = [
       return { added: { id: p.id, book: b.name, name: p.name, amount: gbp(p.amount_pence), cadence: p.cadence, next_on: p.next_on } };
     } },
   { name: 'update_direct_debit', title: 'Change a direct debit',
-    description: 'Change the name, amount, how often, date or note of a direct debit (use list_direct_debits for the id).',
-    inputSchema: S({ id: str('Direct debit id'), name: str('New name'), amount: num('New amount in pounds'), cadence: { type: 'string', enum: CADENCES }, next_on: DATE('New date'), note: { type: ['string', 'null'], description: 'New note (null to clear)' } }, ['id']),
+    description: 'Change the name, amount, how often, date or note of a direct debit (use list_direct_debits for the id). To stop one but keep its history, set last_payment to the date of its final payment (null starts it again); prefer that to deleting.',
+    inputSchema: S({ id: str('Direct debit id'), name: str('New name'), amount: num('New amount in pounds'), cadence: { type: 'string', enum: CADENCES }, next_on: DATE('New date'), note: { type: ['string', 'null'], description: 'New note (null to clear)' },
+      last_payment: { type: ['string', 'null'], description: 'Date of the final payment (YYYY-MM-DD) to stop it after that; null to start it again' } }, ['id']),
     async run(a, c) {
       const patch = {};
       if (a.name != null) patch.name = need(text(a.name, 80), 'name');
@@ -284,10 +286,11 @@ const TOOLS = [
       if (a.cadence != null) { if (!CADENCES.includes(a.cadence)) throw new UserError(`cadence must be one of ${CADENCES.join(', ')}.`); patch.cadence = a.cadence; }
       if (a.next_on != null) patch.next_on = isoDate(a.next_on, 'next_on');
       if (a.note !== undefined) patch.note = text(a.note, 300);
+      if (a.last_payment !== undefined) patch.ends_on = a.last_payment === null ? null : isoDate(a.last_payment, 'last_payment');
       if (!Object.keys(patch).length) throw new UserError('Nothing to change.');
       const [p] = await c.db.update(`money_planned?id=eq.${uuid(a.id, 'id')}`, patch);
       if (!p) throw new UserError('No direct debit with that id.');
-      return { updated: { id: p.id, name: p.name, amount: gbp(p.amount_pence), cadence: p.cadence, next_on: p.next_on, note: p.note } };
+      return { updated: { id: p.id, name: p.name, amount: gbp(p.amount_pence), cadence: p.cadence, next_on: p.next_on, note: p.note, last_payment: p.ends_on } };
     } },
   { name: 'mark_direct_debit_paid', title: 'Tick a direct debit as paid',
     description: "Tick the direct debit currently due as paid (adds it to money out, like the tick box in the app), or untick it (paid: false) to take it out again.",

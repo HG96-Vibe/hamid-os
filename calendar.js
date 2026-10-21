@@ -21,7 +21,7 @@
   const nth = (p, k) => p.cadence === 'weekly' ? addDays(p.next_on, 7 * k) : plusMonths(p.next_on, k * ({ monthly: 1, quarterly: 3, yearly: 12 }[p.cadence] || 0));
   function datesIn(p, from, to) {
     if (p.cadence === 'once') return p.next_on >= from && p.next_on <= to ? [p.next_on] : [];
-    const out = []; for (let k = 0, d = nth(p, 0); d <= to && k < 3000; d = nth(p, ++k)) if (d >= from) out.push(d);
+    const out = []; for (let k = 0, d = nth(p, 0); d <= to && k < 3000; d = nth(p, ++k)) if (d >= from && (!p.ends_on || d <= p.ends_on)) out.push(d);
     return out;
   }
 
@@ -33,7 +33,7 @@
       safe(q(sb.from('tasks').select('id,title,status,horizon,period_start,project_id,repeat_id').eq('horizon', 'day').gte('period_start', from).lte('period_start', to).neq('status', 'carried').limit(5000))),
       safe(q(sb.from('tasks').select('id,title,status,horizon,period_start,scheduled_on').not('scheduled_on', 'is', null).gte('scheduled_on', from).lte('scheduled_on', to).neq('status', 'carried'))),
       safe(q(sb.from('task_repeats').select('id,title,days,starts_on,paused,last_made').eq('paused', false))),
-      safe(q(sb.from('money_planned').select('id,book_id,name,amount_pence,cadence,next_on'))),
+      safe(q(sb.from('money_planned').select('id,book_id,name,amount_pence,cadence,next_on,ends_on'))),
       safe(q(sb.from('money_tx').select('import_key').like('import_key', 'dd|%').gte('occurred_on', addDays(from, -40)).limit(5000))),
       safe(q(sb.from('money_debts').select('id,name,direction,amount_pence,due_on').not('due_on', 'is', null).gte('due_on', from).lte('due_on', to))),
       safe(q(sb.from('project_milestones').select('id,project_id,title,due_on,done_at').gte('due_on', from).lte('due_on', to))),

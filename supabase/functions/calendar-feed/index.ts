@@ -17,11 +17,11 @@ function plusMonths(d: string, n: number) {
   const yy = y + Math.floor(m / 12), mm = ((m % 12) + 12) % 12, last = new Date(Date.UTC(yy, mm + 1, 0)).getUTCDate();
   return `${yy}-${String(mm + 1).padStart(2, '0')}-${String(Math.min(day, last)).padStart(2, '0')}`;
 }
-type Planned = { id: string; name: string; amount_pence: number; cadence: string; next_on: string };
+type Planned = { id: string; name: string; amount_pence: number; cadence: string; next_on: string; ends_on?: string | null };
 const nth = (p: Planned, k: number) => p.cadence === 'weekly' ? addD(p.next_on, 7 * k) : plusMonths(p.next_on, k * (({ monthly: 1, quarterly: 3, yearly: 12 } as Record<string, number>)[p.cadence] || 0));
 function datesIn(p: Planned, from: string, to: string) {
   if (p.cadence === 'once') return p.next_on >= from && p.next_on <= to ? [p.next_on] : [];
-  const out: string[] = []; for (let k = 0, d = nth(p, 0); d <= to && k < 3000; d = nth(p, ++k)) if (d >= from) out.push(d);
+  const out: string[] = []; for (let k = 0, d = nth(p, 0); d <= to && k < 3000; d = nth(p, ++k)) if (d >= from && (!p.ends_on || d <= p.ends_on)) out.push(d);
   return out;
 }
 const gbp = (p: number) => '£' + (p / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -48,7 +48,7 @@ Deno.serve(async (req) => {
   const t0 = localDate(st?.tz || 'Europe/London'), from = addD(t0, -60), to = addD(t0, 180);
 
   const [planned, debts, goals, ms, people, sched, tasks, projects] = await Promise.all([
-    sb.from('money_planned').select('id,name,amount_pence,cadence,next_on').eq('user_id', uid),
+    sb.from('money_planned').select('id,name,amount_pence,cadence,next_on,ends_on').eq('user_id', uid),
     sb.from('money_debts').select('id,name,direction,amount_pence,due_on').eq('user_id', uid).not('due_on', 'is', null).gte('due_on', from).lte('due_on', to),
     sb.from('savings_goals').select('id,name,target_pence,due_on').eq('user_id', uid).eq('archived', false).not('due_on', 'is', null).gte('due_on', from).lte('due_on', to),
     sb.from('project_milestones').select('id,project_id,title,due_on,done_at').eq('user_id', uid).gte('due_on', from).lte('due_on', to),
