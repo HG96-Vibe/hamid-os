@@ -12,7 +12,7 @@
   if (!DS || !DS.base) return;
   const { sb, q, el, state, toast, refresh, go, today, addDays, weekStart, monthStart, addMonths, fmt, iso, monthName } = DS;
   const P = () => DS.proj;
-  const LEVEL = { day: 'Task', week: 'Weekly priority', month: 'Monthly outcome' };
+  const LEVEL = { day: 'Task', week: 'Weekly priority', month: 'Monthly outcome', later: 'Project task (for later)' };
   const NONE = '#9aa0b8';
   const keep = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
   const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
@@ -71,12 +71,12 @@
   /* ---------- a task line ---------- */
   function item(t, status) {
     return el('li', { class: 'wl-it' + (t.repeat ? ' rep' : '') },
-      el('span', { class: 'wl-lv ' + t.horizon, title: LEVEL[t.horizon] }, t.repeat ? '↻' : { day: 'D', week: 'W', month: 'M' }[t.horizon]),
+      el('span', { class: 'wl-lv ' + t.horizon, title: LEVEL[t.horizon] }, t.repeat ? '↻' : { day: 'D', week: 'W', month: 'M', later: 'L' }[t.horizon]),
       el('button', { type: 'button', class: 'wl-t', title: 'Open', onclick: () => DS.openItem(t.id) }, t.title),
       t.repeat ? el('span', { class: 'wl-n', title: t.dates.slice().sort().map(d => fmt(d, { day: 'numeric', month: 'short' })).join(', ') },
         `${status === 'done' ? '✓' : '–'} ${plural(t.dates.length, 'day')}`)
         : el('button', { type: 'button', class: 'wl-d', title: t.horizon === 'day' ? 'Open that day' : `Open that ${t.horizon}`,
-          onclick: () => go(t.horizon === 'day' ? 'today' : t.horizon, t.period_start) }, fmt(t.when, { day: 'numeric', month: 'short' })));
+          onclick: () => t.horizon === 'later' ? DS.openItem(t.id) : go(t.horizon === 'day' ? 'today' : t.horizon, t.period_start) }, fmt(t.when, { day: 'numeric', month: 'short' })));
   }
   function itemList(items, status) {
     return el('div', { class: 'wl-items' }, byDate(items).map(([d, list]) => el('div', { class: 'wl-day' },
@@ -175,7 +175,7 @@
           try { await q(sb.from('tasks').update({ project_id: pid }).in('id', ids)); } catch (e) { return; }
           toast(`${ids.length === 1 ? 'Tagged' : `${ids.length} tasks tagged`}: ${P().label ? P().label(pid) : (P().byId(pid) || {}).name}.`); refresh();
         });
-        return el('li', { class: 'wl-it' }, el('span', { class: 'wl-lv ' + t.horizon, title: LEVEL[t.horizon] }, { day: 'D', week: 'W', month: 'M' }[t.horizon]),
+        return el('li', { class: 'wl-it' }, el('span', { class: 'wl-lv ' + t.horizon, title: LEVEL[t.horizon] }, { day: 'D', week: 'W', month: 'M', later: 'L' }[t.horizon]),
           el('button', { type: 'button', class: 'wl-t', onclick: () => DS.openItem(t.id) }, t.title),
           el('span', { class: 'wl-d' }, fmt(t.when, { day: 'numeric', month: 'short' })), pick, n > 1 ? all : null);
       };

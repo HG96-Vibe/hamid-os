@@ -40,13 +40,13 @@
       const line = open.length ? el('div', { class: 'px-line', 'aria-hidden': 'true' },
         el('span', { class: 'px-now', style: `left:${pos(t0)}%` }, el('small', {}, 'Today')),
         ...open.map(r => el('span', { class: 'px-dot ' + dueClass(r.due_on), style: `left:${pos(r.due_on)}%`, title: `${r.title} · ${fmt(r.due_on, { day: 'numeric', month: 'short' })}` }))) : null;
-      box.replaceChildren(el('h2', {}, 'Milestones'), line,
+      box.replaceChildren(...[el('h2', {}, 'Milestones'), line,
         open.length ? el('ul', { class: 'px-list' }, open.map(row)) : el('p', { class: 'meta' }, 'No milestones yet. Add the key dates for this project.'),
         el('form', { class: 'px-add', onsubmit: async e => {
           e.preventDefault(); const t = title.value.trim(); if (!t) return title.focus(); if (!date.value) return date.focus();
           await q(sb.from('project_milestones').insert({ user_id: DS.uid(), project_id: p.id, title: t.slice(0, 200), due_on: date.value })); toast('Milestone added.'); reload();
         } }, title, date, el('button', { class: 'btn primary', type: 'submit' }, 'Add')),
-        done.length ? el('details', { class: 'px-done' }, el('summary', {}, `Done (${done.length})`), el('ul', { class: 'px-list' }, done.map(row))) : null);
+        done.length ? el('details', { class: 'px-done' }, el('summary', {}, `Done (${done.length})`), el('ul', { class: 'px-list' }, done.map(row))) : null].filter(Boolean));
     };
     const reload = () => q(sb.from('project_milestones').select('*').in('project_id', ids).order('due_on')).then(r => { draw(r); load(); }, () => box.remove());
     reload();

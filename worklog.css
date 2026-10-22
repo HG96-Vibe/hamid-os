@@ -109,3 +109,4 @@ button.wl-d:hover{background:#f3f1ea}
   .wl-modes{margin-left:0}
 }
 .wl-plot[hidden],.wl-table[hidden],.wl-tip[hidden]{display:none}
+.wl-lv.later{background:#ede9fe;color:#6d28d9}

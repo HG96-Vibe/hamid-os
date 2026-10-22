@@ -109,7 +109,7 @@
   // the page redraws (or you leave it): don't leave a calendar floating
   window.addEventListener('hashchange', () => closePop());
 
-  const KIND = { week: 'Weekly priority', month: 'Monthly outcome' };
+  const KIND = { week: 'Weekly priority', month: 'Monthly outcome', later: 'Project task' };
 
   /* ---------- Today: what's scheduled for this day ---------- */
   async function decorateToday(main) {
@@ -120,11 +120,11 @@
     let rows;
     try {
       rows = await q(sb.from('tasks').select('id,title,horizon,status,project_id,scheduled_on')
-        .in('horizon', ['week', 'month']).gte('scheduled_on', isToday ? addDays(d, -60) : d).lte('scheduled_on', d)
+        .in('horizon', ['week', 'month', 'later']).gte('scheduled_on', isToday ? addDays(d, -60) : d).lte('scheduled_on', d)
         .in('status', ['open', 'done']).order('scheduled_on').order('position'));
     } catch (e) { return; }
     // on today, earlier ones still open come along too (marked with their day); otherwise just this day's
-    rows = rows.filter(r => (r.horizon === 'week' || r.horizon === 'month') && r.scheduled_on && r.scheduled_on <= d && (r.scheduled_on === d || (isToday && r.status === 'open')));
+    rows = rows.filter(r => KIND[r.horizon] && r.scheduled_on && r.scheduled_on <= d && (r.scheduled_on === d || (isToday && r.status === 'open')));
     if (!rows.length || !list.isConnected) return;
     const box = el('section', { class: 'sch-today', 'aria-label': isToday ? 'Scheduled for today' : 'Scheduled for this day' },
       el('h3', {}, isToday ? 'Scheduled for today' : 'Scheduled for this day'),
@@ -151,11 +151,11 @@
     let rows;
     try {
       rows = await q(sb.from('tasks').select('id,title,horizon,status,scheduled_on')
-        .in('horizon', ['week', 'month']).gte('scheduled_on', ws).lte('scheduled_on', we).in('status', ['open', 'done']).order('position'));
+        .in('horizon', ['week', 'month', 'later']).gte('scheduled_on', ws).lte('scheduled_on', we).in('status', ['open', 'done']).order('position'));
     } catch (e) { return; }
     if (!rows.length || !days.isConnected) return;
     [...days.querySelectorAll('.wk-day')].forEach((tile, i) => {
-      const d = addDays(ws, i), here = rows.filter(r => r.scheduled_on === d && (r.horizon === 'week' || r.horizon === 'month'));
+      const d = addDays(ws, i), here = rows.filter(r => r.scheduled_on === d && KIND[r.horizon]);
       if (!here.length) return;
       tile.append(el('span', { class: 'sch-day' }, here.map(r => el('span', { class: 'sch-it' + (r.status === 'done' ? ' done' : ''), title: `${KIND[r.horizon]}: ${r.title}` }, r.title))));
       tile.setAttribute('aria-label', tile.getAttribute('aria-label') + `. Scheduled: ${here.map(r => r.title).join(', ')}`);

@@ -84,15 +84,19 @@
 
   async function fetchAll() {
     const t0 = today(), ws = weekStart(t0), ms = monthStart(t0), since = addDays(t0, -60);
-    const [month, week, day, recent, focus] = await Promise.all([
+    const [month, week, day, recent, focus, , later] = await Promise.all([
       q(sb.from('tasks').select('id,title,status,project_id,progress,parent_id,period_start,scheduled_on').eq('horizon', 'month').eq('period_start', ms).neq('status', 'carried').order('position')),
       q(sb.from('tasks').select('id,title,status,project_id,parent_id,period_start,scheduled_on').eq('horizon', 'week').eq('period_start', ws).neq('status', 'carried').order('position')),
       q(sb.from('tasks').select('id,title,status,project_id,parent_id,period_start').eq('horizon', 'day').eq('period_start', t0).neq('status', 'carried').order('position')),
       q(sb.from('tasks').select('id,title,status,horizon,project_id,period_start,created_at,completed_at').not('project_id', 'is', null).gte('period_start', since).order('period_start', { ascending: false })),
       q(sb.from('focus_sessions').select('minutes,started_at,project_id,tasks(project_id)').gte('started_at', new Date(weekStart(t0) + 'T00:00:00').toISOString())),
-      DS.projx ? DS.projx.load() : null
+      DS.projx ? DS.projx.load() : null,
+      // "for later": tasks filed under a project with no period (never carried forward); open ones, plus a week of done / dropped
+      q(sb.from('tasks').select('id,title,status,project_id,parent_id,period_start,scheduled_on,completed_at').eq('horizon', 'later').not('project_id', 'is', null)
+        .in('status', ['open', 'done']).order('scheduled_on', { ascending: true, nullsFirst: false }).order('position'))
     ]);
-    return { month, week, day, recent, focus };
+    const wk = new Date(Date.now() - 7 * 864e5).toISOString();
+    return { month, week, day, recent, focus, later: (later || []).filter(t => t.status === 'open' || (t.completed_at || '') >= wk) };
   }
 
   const mins = m => (m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? ' ' + (m % 60) + 'm' : ''}`);
@@ -100,13 +104,13 @@
 
   function statsFor(ids, D) {
     const of = arr => arr.filter(t => ids.includes(t.project_id));
-    const month = of(D.month), week = of(D.week), day = of(D.day), recent = of(D.recent);
+    const month = of(D.month), week = of(D.week), day = of(D.day), recent = of(D.recent), later = of(D.later || []).filter(t => t.status !== 'dropped');
     const outcomes = month.filter(t => t.status !== 'dropped');
     const achieved = outcomes.filter(t => t.status === 'done').length;
     const focus = D.focus.filter(f => ids.includes(f.tasks?.project_id) || ids.includes(f.project_id)).reduce((a, f) => a + (f.minutes || 0), 0);
     const stamps = recent.map(t => t.completed_at || t.created_at).filter(Boolean).sort();
     const last = stamps[stamps.length - 1] || null;
-    return { month, week, day, recent, outcomes, achieved, focus, last,
+    return { month, week, day, recent, later, outcomes, achieved, focus, last,
       pct: outcomes.length ? Math.round(achieved / outcomes.length * 100) : 0,
       openToday: day.filter(t => t.status === 'open').length };
   }
@@ -194,13 +198,13 @@
     const done = s.recent.filter(t => t.status === 'done').slice(0, 15);
     const addTitle = el('input', { class: 'field', placeholder: 'Add a task for this project', maxlength: '500', 'aria-label': 'New task title' });
     const addWhen = el('select', { class: 'field pj-when', 'aria-label': 'When' },
-      el('option', { value: 'month' }, 'This month'), el('option', { value: 'week' }, 'This week'), el('option', { value: 'day' }, 'Today'));
+      el('option', { value: 'month' }, 'This month'), el('option', { value: 'week' }, 'This week'), el('option', { value: 'day' }, 'Today'), el('option', { value: 'later' }, 'For later (no date)'));
     addWhen.value = 'month'; // new project tasks start as this month's; drag them to the week or today when it's time
     const add = async e => {
       e.preventDefault();
       const title = addTitle.value.trim(); if (!title) return addTitle.focus();
       const h = addWhen.value, t0 = today();
-      await q(sb.from('tasks').insert({ user_id: DS.uid(), horizon: h, period_start: h === 'day' ? t0 : h === 'week' ? weekStart(t0) : monthStart(t0),
+      await q(sb.from('tasks').insert({ user_id: DS.uid(), horizon: h, period_start: h === 'day' || h === 'later' ? t0 : h === 'week' ? weekStart(t0) : monthStart(t0),
         title, project_id: p.id, position: Date.now() / 1000 }));
       toast('Added.'); refresh();
     };
@@ -218,11 +222,12 @@
       hero(s),
       briefBox(p),
       el('form', { class: 'pj-addrow', onsubmit: add }, addTitle, addWhen, el('button', { class: 'btn primary', type: 'submit' }, 'Add')),
-      el('p', { class: 'meta pj-dndhint' }, 'Drag a task onto another list to move it between this month, this week and today.'),
+      el('p', { class: 'meta pj-dndhint' }, 'Drag a task onto another list to move it between this month, this week, today and for later.'),
       el('div', { class: 'pj-page-grid' },
         sec('This month’s outcomes', s.outcomes, 'No outcomes for this project this month.', 'month'),
         sec('This week’s priorities', s.week, 'No priorities this week.', 'week'),
         sec('Today', s.day, 'Nothing on today’s sheet.', 'day'),
+        sec('For later', s.later, 'Nothing waiting. On Today, a task’s ⋯ menu has “Move to a project for later”.', 'later'),
         el('section', { class: 'pj-sec' }, el('h3', {}, 'Recently done'),
           done.length ? el('ul', { class: 'pj-log' }, done.map(t => el('li', {},
             el('span', {}, t.title), el('time', {}, fmt(t.period_start, { day: 'numeric', month: 'short' }))))) : el('p', { class: 'pj-none' }, 'Nothing finished in the last 60 days.'))),
@@ -326,7 +331,7 @@
   /* ---------- drag a task between This month, This week and Today (project page, mouse or trackpad) ----------
      The task follows the pointer, the list under it lights up, and on release it glides into its new list.
      The page is not redrawn, so nothing jumps; the change is saved in the background (and undone if that fails). */
-  const LABEL = { month: 'this month', week: 'this week', day: 'today' };
+  const LABEL = { month: 'this month', week: 'this week', day: 'today', later: 'for later' };
   let drag = null, swallowClick = false;
   const zoomOf = elm => (elm.offsetWidth ? elm.getBoundingClientRect().width / elm.offsetWidth : 1) || 1;
   document.addEventListener('pointerdown', e => {
@@ -389,7 +394,7 @@
       { duration: 220, easing: 'cubic-bezier(.2,.7,.2,1)', fill: 'forwards' }).onfinish = end;
   }
   async function moveTask(id, from, h) {
-    const t0 = today(), period = h === 'day' ? t0 : h === 'week' ? weekStart(t0) : monthStart(t0);
+    const t0 = today(), period = h === 'day' || h === 'later' ? t0 : h === 'week' ? weekStart(t0) : monthStart(t0);
     try {
       const row = { horizon: h, period_start: period, parent_id: null, pinned: false, position: Date.now() / 1000 };
       if (h === 'day') row.scheduled_on = null; // a task for today needs no separate day

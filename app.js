@@ -630,9 +630,9 @@ async function viewHistory() {
   const doSearch = async () => {
     const term = sIn.value.trim().replace(/[%_,()]/g, ' ');
     if (!term) { results.replaceChildren(); return; }
-    const rows = await q(sb.from('tasks').select('title,period_start,horizon,status').ilike('title', `%${term}%`).order('period_start', { ascending: false }).limit(50));
-    results.replaceChildren(...(rows.length ? rows.map(r => el('li', {}, el('button', { onclick: () => go(r.horizon === 'day' ? 'today' : r.horizon, r.period_start) },
-      el('time', {}, shortDay(r.period_start)), el('span', {}, r.title, r.horizon !== 'day' ? ` (${r.horizon})` : '', r.status === 'done' ? ' ✓' : '')))) :
+    const rows = await q(sb.from('tasks').select('id,title,period_start,horizon,status').ilike('title', `%${term}%`).order('period_start', { ascending: false }).limit(50));
+    results.replaceChildren(...(rows.length ? rows.map(r => el('li', {}, el('button', { onclick: () => r.horizon === 'later' ? DS.openItem && DS.openItem(r.id) : go(r.horizon === 'day' ? 'today' : r.horizon, r.period_start) },
+      el('time', {}, shortDay(r.period_start)), el('span', {}, r.title, r.horizon !== 'day' ? ` (${r.horizon === 'later' ? 'for later' : r.horizon})` : '', r.status === 'done' ? ' ✓' : '')))) :
       [el('li', { class: 'meta' }, 'No tasks match that.')]));
   };
   sIn.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); doSearch(); } });

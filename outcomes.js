@@ -182,8 +182,12 @@
     if (!panel.el || panel.id !== id) return;
     if (!t) return closePanel();
     // Works for monthly outcomes, weekly priorities and daily tasks; the wording and links follow the item's level.
-    const W = t.horizon === 'week', D = t.horizon === 'day';
-    const L = D
+    const W = t.horizon === 'week', D = t.horizon === 'day', LT = t.horizon === 'later';
+    const pname = t.project_id && DS.proj && DS.proj.byId(t.project_id) ? DS.proj.byId(t.project_id).name : 'Project';
+    const L = LT
+      ? { kick: `${pname} \u00b7 for later` + (t.scheduled_on ? ` \u00b7 ${fmt(t.scheduled_on, { weekday: 'short', day: 'numeric', month: 'short' })}` : ' \u00b7 no date'), done: 'Done', mark: '\u2713 Mark done',
+          drop: 'Drop this task', deleted: 'Task deleted.', unlinked: '' }
+      : D
       ? { kick: `${fmt(t.period_start, { weekday: 'long', day: 'numeric', month: 'short' })} \u00b7 task`, done: 'Done', mark: '\u2713 Mark done', next: 'Move to tomorrow', moved: 'Moved to tomorrow.',
           drop: 'Drop this task', deleted: 'Task deleted.', unlinked: '', link: 'just tick it off when it\u2019s done' }
       : W
@@ -207,7 +211,12 @@
     const menu = el('div', { class: 'op-menu', role: 'menu' },
       el('button', { role: 'menuitem', onclick: closePanel }, icon('M18 6 6 18M6 6l12 12'), 'Close panel'),
       el('hr'),
-      t.status === 'open' && !t.repeat_id ? el('button', { role: 'menuitem', onclick: async () => { await carry(t); toast(L.moved); closePanel(); refresh(); } }, icon('M5 12h14M13 6l6 6-6 6'), L.next) : null,
+      t.status === 'open' && !t.repeat_id && !LT ? el('button', { role: 'menuitem', onclick: async () => { await carry(t); toast(L.moved); closePanel(); refresh(); } }, icon('M5 12h14M13 6l6 6-6 6'), L.next) : null,
+      D && t.status === 'open' && !t.repeat_id ? el('button', { role: 'menuitem', onclick: () => { menu.classList.remove('open'); toLater(t); } },
+        icon('M3 7h18M3 12h18M3 17h10'), 'Move to a project for later\u2026') : null,
+      LT && t.status === 'open' ? el('button', { role: 'menuitem', onclick: async () => {
+        await setTask(t.id, { horizon: 'day', period_start: DS.today(), scheduled_on: null, position: Date.now() / 1000 }); toast('On today\u2019s sheet.'); closePanel(); refresh(); } },
+        icon('M5 12h14M13 6l6 6-6 6'), 'Put it on today\u2019s sheet') : null,
       D && DS.repeats ? el('button', { role: 'menuitem', onclick: () => { menu.classList.remove('open'); t.repeat_id ? DS.repeats.open({ focus: t.repeat_id }) : DS.repeats.open({ fromTask: t }); } },
         icon('M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3'), t.repeat_id ? 'Repeat settings' : 'Repeat this task\u2026') : null,
       t.status === 'open' ? el('button', { role: 'menuitem', onclick: keep(() => save({ status: 'dropped' })) }, icon('M5 12h14'), L.drop) : null,
@@ -253,7 +262,7 @@
     if (panel.tab === 'overview') {
       const range = el('input', { type: 'range', min: '0', max: '100', step: '5', value: String(t.progress ?? fill), class: 'op-range', 'aria-label': 'Progress percentage',
         onchange: keep(() => save({ progress: +range.value })) });
-      const ctx = DS.proj.picker({ value: t.project_id || '', className: 'op-field', ariaLabel: 'Project', onChange: keep(v => save({ project_id: v })) });
+      const ctx = DS.proj.picker({ value: t.project_id || '', className: 'op-field', ariaLabel: 'Project', onChange: keep(v => LT && !v ? (toast('A task for later lives on a project page, so it needs a project.'), renderPanel()) : save({ project_id: v })) });
       const doneDef = el('textarea', { class: 'op-field', rows: '2', value: t.done_def || '', placeholder: 'What will be true when this is achieved?',
         onchange: keep(() => save({ done_def: doneDef.value.trim() || null })) });
       const remind = el('input', { class: 'op-field', type: 'datetime-local', value: t.remind_at ? localInput(t.remind_at) : '',
@@ -276,9 +285,9 @@
           D ? null : el('label', { class: 'op-label' }, 'Scheduled for',
             el('input', { class: 'op-field', type: 'date', value: t.scheduled_on || '', 'aria-label': 'Scheduled for (a day to do it on)',
               onchange: keep(e => save({ scheduled_on: e.target.value || null })) }),
-            el('small', { class: 'op-muted' }, 'It shows on that day in the Week tab and at the top of Today. ',
+            el('small', { class: 'op-muted' }, LT ? 'Give it a day and it shows at the top of Today on that day (and in the Week tab), without being carried round every day. ' : 'It shows on that day in the Week tab and at the top of Today. ',
               t.scheduled_on ? el('button', { type: 'button', class: 'op-link', onclick: keep(() => save({ scheduled_on: null })) }, 'Unschedule') : null))),
-        D ? null : el('section', { class: 'op-sec' }, el('h4', {}, L.kids, weeks.length ? el('span', { class: 'op-cnt' }, `${s.done}/${s.total}`) : null),
+        D || LT ? null : el('section', { class: 'op-sec' }, el('h4', {}, L.kids, weeks.length ? el('span', { class: 'op-cnt' }, `${s.done}/${s.total}`) : null),
           weeks.length ? el('ul', { class: 'op-weeks' }, weeks.map(w => el('li', { class: w.status === 'done' ? 'done' : '' },
             el('span', { class: 'op-tick' }, w.status === 'done' ? '\u2713' : ''), el('span', { class: 'op-wt' }, w.title),
             el('button', { class: 'op-link', onclick: () => { closePanel(); DS.go(W ? 'today' : 'week', w.period_start); } }, fmt(w.period_start, { day: 'numeric', month: 'short' })))))
@@ -344,7 +353,35 @@
 
   DS.views.month = viewMonth;
   DS.openOutcome = openPanel;
+  // Off today's sheet and into a project's "For later" list: no day, never carried forward. Give it a day on the
+  // project page (or here) whenever you're ready; it then shows at the top of Today on that day.
+  async function toLater(t) {
+    const go = async pid => {
+      try {
+        await setTask(t.id, { horizon: 'later', project_id: pid, period_start: DS.today(), parent_id: null, pinned: false, scheduled_on: null, carry_count: 0 });
+        await q(sb.from('tasks').update({ parent_id: null }).eq('parent_id', t.id));
+      } catch (e) { return false; }
+      const p = DS.proj && DS.proj.byId(pid);
+      closePanel(); toast(`Moved to ${p ? p.name : 'the project'} for later. It\u2019s on the project page, with no date.`); refresh();
+      return true;
+    };
+    if (t.project_id) return go(t.project_id);
+    const pick = DS.proj.picker({ value: (DS.proj.lastPid && DS.proj.lastPid()) || '', className: 'field', ariaLabel: 'Project', noneLabel: 'Choose a project\u2026' });
+    const dlg = el('dialog', { class: 'lt-dlg', 'aria-label': 'Move to a project for later' });
+    const form = el('form', { class: 'dlg', onsubmit: async e => {
+      e.preventDefault();
+      if (!pick.value) { toast('Choose a project.'); pick.focus(); return; }
+      if (await go(pick.value)) dlg.close();
+    } },
+      el('h2', {}, 'Move to a project for later'),
+      el('p', { class: 'meta' }, `\u201c${t.title}\u201d comes off today and waits on the project page, with no date and no carrying forward.`),
+      el('label', { class: 'op-label' }, 'Project', pick),
+      el('div', { class: 'actions' }, el('button', { class: 'btn primary', type: 'submit' }, 'Move'), el('button', { class: 'btn', type: 'button', onclick: () => dlg.close() }, 'Cancel')));
+    dlg.append(form); dlg.addEventListener('close', () => dlg.remove());
+    document.body.append(dlg); dlg.showModal(); pick.focus();
+  }
   DS.openItem = openPanel;
+  DS.toLater = toLater;
   DS.closeItem = closePanel;
   if (state.user && state.view === 'month') refresh();
 })();

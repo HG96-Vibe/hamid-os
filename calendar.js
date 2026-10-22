@@ -44,7 +44,7 @@
     const pname = id => (DS.proj.byId(id) || {}).name;
     tasks.forEach(t => put(t.period_start, { kind: t.repeat_id ? 'repeat' : 'task', title: t.title, sub: t.repeat_id ? 'Repeating' : pname(t.project_id) || 'Task', done: t.status === 'done', dropped: t.status === 'dropped',
       go: () => { DS.go('today', t.period_start); if (DS.openItem) setTimeout(() => DS.openItem(t.id), 250); } }));
-    sched.forEach(t => put(t.scheduled_on, { kind: 'task', title: t.title, sub: t.horizon === 'week' ? 'Weekly priority' : 'Monthly outcome', done: t.status === 'done', go: () => DS.openItem && DS.openItem(t.id) }));
+    sched.forEach(t => put(t.scheduled_on, { kind: 'task', title: t.title, sub: { week: 'Weekly priority', month: 'Monthly outcome', later: 'Project task', day: 'Task' }[t.horizon] || 'Task', done: t.status === 'done', go: () => DS.openItem && DS.openItem(t.id) }));
     // repeating tasks from tomorrow on (today's and earlier copies are real tasks already)
     for (let d = addDays(t0, 1) > from ? addDays(t0, 1) : from; d <= to; d = addDays(d, 1)) reps.forEach(r => { if (r.starts_on <= d && r.days.includes(isoDow(d))) put(d, { kind: 'repeat', title: r.title, sub: 'Repeating', go: () => DS.repeats && DS.repeats.open({ focus: r.id }) }); });
     planned.forEach(p => datesIn(p, from, to).forEach(d => put(d, { kind: 'money', title: p.name, sub: `Direct debit · ${gbp(p.amount_pence)}`, done: paid.has(`dd|${p.id}|${d}`), go: () => DS.go('capital') })));

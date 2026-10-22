@@ -131,3 +131,4 @@ html.light .pj-brief{box-shadow:var(--shadow);border:1px solid rgba(30,27,75,.06
 .pj-group:nth-of-type(3n) .pj-dot::after{animation-delay:-2.8s}
 @keyframes pj-breathe{from{opacity:.25;transform:scale(.85)}to{opacity:.95;transform:scale(1.15)}}
 @media (prefers-reduced-motion:reduce){.pj-ghead .pj-dot::after{animation:none;opacity:.6}}
+.pj-sec[data-h="later"] .pj-items li .sch-btn{opacity:1}

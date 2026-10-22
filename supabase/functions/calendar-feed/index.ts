@@ -69,7 +69,7 @@ Deno.serve(async (req) => {
   for (const g of goals.data || []) add(`goal-${g.id}`, g.due_on, `🎯 ${g.name} (${gbp(g.target_pence)})`, 'Savings goal (Hamid OS)', 'Money');
   for (const m of ms.data || []) add(`ms-${m.id}`, m.due_on, `◆ ${m.title}${m.done_at ? ' ✓' : ''}`, pname(m.project_id) ? `Milestone · ${pname(m.project_id)}` : 'Milestone', 'Milestones');
   for (const p of people.data || []) add(`fu-${p.id}-${p.follow_up_on}`, p.follow_up_on, `👤 Follow up: ${p.name}`, p.company || 'Hamid OS', 'People');
-  for (const t of sched.data || []) add(`sched-${t.id}`, t.scheduled_on, `${t.status === 'done' ? '✓ ' : ''}${t.title}`, t.horizon === 'week' ? 'Weekly priority' : 'Monthly outcome', 'Tasks');
+  for (const t of sched.data || []) add(`sched-${t.id}`, t.scheduled_on, `${t.status === 'done' ? '✓ ' : ''}${t.title}`, t.horizon === 'week' ? 'Weekly priority' : t.horizon === 'later' ? 'Project task' : 'Monthly outcome', 'Tasks');
   for (const t of tasks.data || []) add(`task-${t.id}`, t.period_start, `☐ ${t.title}`, 'Task (Hamid OS)', 'Tasks');
 
   const body = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Hamid OS//Calendar//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',

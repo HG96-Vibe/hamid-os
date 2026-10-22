@@ -146,7 +146,7 @@ module.exports = h => {
         for (const g of goals) items.push({ date: g.due_on, what: `Savings goal deadline: ${g.name} (${gbp(g.target_pence)})` });
         for (const m of ms) items.push({ date: m.due_on, what: `Milestone: ${m.title}${pn(m.project_id) ? ' · ' + pn(m.project_id) : ''}`, overdue: m.due_on < t0 || undefined });
         for (const p of people) items.push({ date: p.follow_up_on, what: `Follow up: ${p.name}${p.company ? ' (' + p.company + ')' : ''}`, overdue: p.follow_up_on < t0 || undefined });
-        for (const t of sched) items.push({ date: t.scheduled_on, what: `${t.horizon === 'week' ? 'Weekly priority' : 'Monthly outcome'}: ${t.title}` });
+        for (const t of sched) items.push({ date: t.scheduled_on, what: `${t.horizon === 'week' ? 'Weekly priority' : t.horizon === 'later' ? 'Project task' : 'Monthly outcome'}: ${t.title}` });
         for (const t of tasks) items.push({ date: t.period_start, what: `${t.repeat_id ? 'Repeating task' : 'Task'}: ${t.title}` });
         items.sort((x, y) => (x.date < y.date ? -1 : x.date > y.date ? 1 : 0));
         return { today: t0, through: to, agenda: items };

@@ -117,8 +117,8 @@
     add('Go to', secs.map(([v, l]) => ({ label: l, sub: 'Section', go: () => DS.go(v, v === 'today' ? today() : undefined) })));
     add('Projects', projs.map(p => ({ label: p.name, sub: p.parent_id ? (DS.proj.byId(p.parent_id) || {}).name : p.kind === 'personal' ? 'Personal' : 'Company', go: () => DS.proj.open(p.id) })));
     add('People', people.map(p => ({ label: p.name, sub: [p.role, p.company].filter(Boolean).join(' · ') || 'Person', go: () => DS.people ? DS.people.open(p.id) : DS.go('people') })));
-    add('Tasks', tasks.map(x => ({ label: x.title, sub: `${{ day: 'Task', week: 'Priority', month: 'Outcome' }[x.horizon]} · ${fmt(x.period_start, { day: 'numeric', month: 'short' })}${x.status === 'done' ? ' · done' : ''}`,
-      go: () => { DS.go(x.horizon === 'day' ? 'today' : x.horizon, x.period_start); if (DS.openItem) setTimeout(() => DS.openItem(x.id), 250); } })));
+    add('Tasks', tasks.map(x => ({ label: x.title, sub: `${{ day: 'Task', week: 'Priority', month: 'Outcome', later: 'For later' }[x.horizon]} · ${fmt(x.period_start, { day: 'numeric', month: 'short' })}${x.status === 'done' ? ' · done' : ''}`,
+      go: () => { if (x.horizon === 'later') { if (DS.openItem) DS.openItem(x.id); return; } DS.go(x.horizon === 'day' ? 'today' : x.horizon, x.period_start); if (DS.openItem) setTimeout(() => DS.openItem(x.id), 250); } })));
     add('Repeating', reps.map(r => ({ label: '↻ ' + r.title, sub: DS.repeats ? DS.repeats.label(r.days) : 'Repeats', go: () => DS.repeats && DS.repeats.open({ focus: r.id }) })));
     add('Documents', docs.map(d => ({ label: d.title, sub: d.file ? (d.file.ext === 'html' ? 'HTML page' : 'File') : 'Document', go: () => DS.create && DS.create.open(d.id) })));
     add('Payments', pays.map(p => ({ label: p.description, sub: `${money(p.amount_pence)} · ${fmt(p.occurred_on, { day: 'numeric', month: 'short', year: '2-digit' })}`,
